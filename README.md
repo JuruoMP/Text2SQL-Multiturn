@@ -97,3 +97,23 @@ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more inform
 ## License
 
 This project is licensed under the Apache-2.0 License.
+
+## SparC Settings
+
+Download dataset and decompress into data folder:
+```bash
+gdown --id 13Abvu5SUMSP3SJM-ZIj66mOkeyAquR73
+unzip sparc.zip
+bash data/sparc/generate.sh ./sparc
+
+mkdir data/sparc-bart
+cp ./sparc/*.json data/sparc-bart/
+ln -s $(pwd)/sparc/database data/sparc-bart/database
+```
+
+Run preprocess/train/evaluate
+```bash
+python run.py preprocess experiments/sparc-configs/gap-run.jsonnet
+python run.py train experiments/sparc-configs/gap-run.jsonnet
+python run.py eval experiments/sparc-configs/gap-run.jsonnet
+```

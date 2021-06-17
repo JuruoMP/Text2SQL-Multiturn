@@ -34,6 +34,7 @@ def intersperse(delimiter, seq):
 
 
 @registry.register('grammar', 'spider')
+@registry.register('grammar', 'sparc')
 class SpiderLanguage:
 
     root_type = 'sql'
