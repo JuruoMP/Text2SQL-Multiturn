@@ -17,11 +17,11 @@ class SQLBart(nn.Module):
             input_ids=x['input_ids'],
             attention_mask=x['attention_mask'],
             decoder_input_ids=x['decoder_input_ids'],
+            decoder_attention_mask=x['decoder_attention_mask']
         )
         lm_logits = self.lm_head(bart_outputs[0]) + self.final_logits_bias
 
-        labels = x['decoder_input_ids']
-        loss_fct = torch.nn.CrossEntropyLoss()
-        masked_lm_loss = loss_fct(lm_logits.view(-1, self.config.vocab_size), labels.view(-1))
+        loss_fct = torch.nn.CrossEntropyLoss(ignore_index=-100)
+        masked_lm_loss = loss_fct(lm_logits.view(-1, self.bart_config.vocab_size), x['labels'].view(-1))
 
         return {'logits': lm_logits, 'loss': masked_lm_loss}

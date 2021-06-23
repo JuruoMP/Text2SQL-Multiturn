@@ -100,6 +100,17 @@ This project is licensed under the Apache-2.0 License.
 
 ## SparC Settings
 
+Prepare
+```bash
+cd rat-sql-gap
+mkdir third_party
+wget http://nlp.stanford.edu/software/stanford-corenlp-full-2018-10-05.zip
+unzip stanford-corenlp-full-2018-10-05.zip -d third_party/
+pushd third_party/stanford-corenlp-full-2018-10-05
+nohup java -mx4g -cp "*" edu.stanford.nlp.pipeline.StanfordCoreNLPServer -port 8999 -timeout 15000 > server.log &
+popd
+```
+
 Download dataset and decompress into data folder:
 ```bash
 gdown --id 13Abvu5SUMSP3SJM-ZIj66mOkeyAquR73

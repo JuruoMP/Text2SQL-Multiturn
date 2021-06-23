@@ -12,50 +12,6 @@ import networkx as nx
 from seq2struct.datasets.spider_lib import evaluation
 
 
-class OldSparcDataset(Dataset):
-    def __init__(self, path, split='train'):
-        self.path = path
-        tables = json.load(open(os.path.join(self.path, 'tables.json'), 'r', encoding='utf-8'))
-        self.tables = {x['db_id']: x for x in tables}
-        raw_data = json.load(open(os.path.join(self.path, f'{split}.json'), 'r', encoding='utf-8'))
-        self.data = []
-        for example in raw_data:
-            db_id = example['database_id']
-            table_info = self.tables[db_id]
-            accumulated_nl = []
-            for interaction in example['interaction']:
-                accumulated_nl.append(interaction['utterance'])
-                triple = (copy.copy(accumulated_nl, interaction['query']), table_info)
-                self.data.append(triple)
-        self.bart_tokenizer = BartTokenizer.from_pretrained('facebook/bart-large')
-
-    def __getitem__(self, idx):
-        nls, sql, table_info = self.data[idx]
-        nl_ids = [self.bart_tokenizer(nl) for nl in nls]
-        concat_nl_ids = [self.bart_tokenizer.sos_token_id]
-        for nl_id in nl_ids:
-            concat_nl_ids += nl_id + [self.bart_tokenizer.eos_token_id]
-
-        sql_ids = self.bart_tokenizer(sql)
-
-        table_names, column_names = table_info['table_names'], table_info['column_names']
-        table_ids = [self.bart_tokenizer(x) for x in table_names]
-        column_ids = [self.bart_tokenizer(x[1]) for x in column_names]
-        concat_table_ids = [0]
-
-        concat_input_ids = torch.Tensor(concat_nl_ids + concat_table_ids)
-        attention_mask = torch.ones_like(concat_input_ids)
-        output_ids = torch.Tensor(sql_ids)
-        return {
-            'input_ids': concat_input_ids,
-            'attention_mask': attention_mask,
-            'labels': output_ids
-        }
-
-    def collate_fn(self, data_list):
-        raise NotImplementedError
-
-
 @attr.s
 class SparcItem:
     text = attr.ib()
@@ -185,6 +141,9 @@ class SparcDataset(torch.utils.data.Dataset):
                 if self.validate_item(item):
                     self.examples.append(item)
 
+            if len(self.examples) >= 1000:
+                break
+
         print('Sparc dataset built.')
 
     def __len__(self):
@@ -197,7 +156,8 @@ class SparcDataset(torch.utils.data.Dataset):
             'input_ids': encoder_dict['input_ids'],
             'attention_mask': encoder_dict['attention_mask'],
             'decoder_input_ids': decoder_dict['input_ids'],
-            'decoder_attention_mask': decoder_dict['attention_mask']
+            'decoder_attention_mask': decoder_dict['attention_mask'],
+            'labels': decoder_dict['input_ids'],
         }
 
     def tokenize_item(self, item):
@@ -227,8 +187,9 @@ class SparcDataset(torch.utils.data.Dataset):
         for x in x_list:
             x['input_ids'] += [0 for _ in range(max_input_len - len(x['input_ids']))]
             x['attention_mask'] += [0 for _ in range(max_input_len - len(x['attention_mask']))]
-            x['decoder_input_ids'] += [-100 for _ in range(max_output_len - len(x['decoder_input_ids']))]
-            x['decoder_attention_mask'] += [0 for _ in range(max_input_len - len(x['decoder_attention_mask']))]
+            x['decoder_input_ids'] += [0 for _ in range(max_output_len - len(x['decoder_input_ids']))]
+            x['decoder_attention_mask'] += [0 for _ in range(max_output_len - len(x['decoder_attention_mask']))]
+            x['labels'] += [-100 for _ in range(max_output_len - len(x['labels']))]
         return default_collate([{k: torch.tensor(v).long() for k, v in x.items()} for x in x_list])
 
     class Metrics:
@@ -269,125 +230,6 @@ class SparcDataset(torch.utils.data.Dataset):
                 'per_item': self.results,
                 'total_scores': self.evaluator.scores
             }
-
-
-# class SparcEncoderBartPreproc(SparcEncoderV2Preproc):
-#     # Why in the BERT model, we set the include_table_name_in_column as False?
-#     def __init__(
-#             self,
-#             save_path,
-#             db_path,
-#             fix_issue_16_primary_keys=False,
-#             include_table_name_in_column=False,
-#             bart_version = "bart-large",
-#             compute_sc_link=True,
-#             compute_cv_link=False):
-#         self.data_dir = os.path.join(save_path, 'enc')
-#         self.db_path = db_path
-#         self.texts = collections.defaultdict(list)
-#         self.fix_issue_16_primary_keys = fix_issue_16_primary_keys
-#         self.include_table_name_in_column = include_table_name_in_column
-#         self.compute_sc_link = compute_sc_link
-#         self.compute_cv_link = compute_cv_link
-#
-#         self.counted_db_ids = set()
-#         self.preprocessed_schemas = {}
-#
-#         self.tokenizer = BartTokenizer.from_pretrained(bart_version)
-#
-#         column_types = ["text", "number", "time", "boolean", "others"]
-#         self.tokenizer.add_tokens([f"<type: {t}>" for t in column_types])
-#
-#     # def _tokenize(self, presplit, unsplit):
-#     #     # I want to keep this tokenization consistent with BartTokens.
-#     #     # Presplit is required here.
-#     #     tokens = nltk.word_tokenize(unsplit.replace("'", " ' ").replace('"', ' " '))
-#     #     toks = []
-#     #     for token in tokens:
-#     #         toks.extend(self.tokenizer.tokenize(token, add_prefix_space=True))
-#     #     return toks
-#     def _tokenize(self, presplit, unsplit):
-#         s = ' '.join(presplit)
-#         toks = self.tokenizer.tokenize(s)
-#         return toks
-#
-#     def add_item(self, item, section, validation_info):
-#         preprocessed = self.preprocess_item(item, validation_info)
-#         self.texts[section].append(preprocessed)
-#
-#     def preprocess_item(self, item, validation_info):
-#         # For bart, there is a punctuation issue if we want to merge it back to words.
-#         # So here I will use nltk to further tokenize the sentence first.
-#         turn_texts = [' '.join(x) for x in item.text]
-#         concat_turn_texts = ' </s> '.join(turn_texts)
-#         question = self._tokenize(concat_turn_texts.split(' '), concat_turn_texts)
-#         preproc_schema = self._preprocess_schema(item.schema)
-#         question_bart_tokens = BartTokens(concat_turn_texts, self.tokenizer)
-#         if self.compute_sc_link:
-#             # We do not want to transform pieces back to word.
-#             sc_link = question_bart_tokens.bart_schema_linking(
-#                 preproc_schema.normalized_column_names,
-#                 preproc_schema.normalized_table_names
-#             )
-#         else:
-#             sc_link = {"q_col_match": {}, "q_tab_match": {}}
-#
-#         if self.compute_cv_link:
-#             cv_link = question_bart_tokens.bart_cv_linking(
-#                 item.schema, self.db_path)
-#         else:
-#             cv_link = {"num_date_match": {}, "cell_match": {}}
-#
-#         return {
-#             'raw_question': concat_turn_texts,
-#             'question': question,
-#             'db_id': item.schema.db_id,
-#             'sc_link': sc_link,
-#             'cv_link': cv_link,
-#             'columns': preproc_schema.column_names,
-#             'tables': preproc_schema.table_names,
-#             'table_bounds': preproc_schema.table_bounds,
-#             'column_to_table': preproc_schema.column_to_table,
-#             'table_to_columns': preproc_schema.table_to_columns,
-#             'foreign_keys': preproc_schema.foreign_keys,
-#             'foreign_keys_tables': preproc_schema.foreign_keys_tables,
-#             'primary_keys': preproc_schema.primary_keys,
-#         }
-#
-#     def validate_item(self, item, section):
-#         turn_texts = [' '.join(x) for x in item.text]
-#         concat_turn_texts = ' </s> '.join(turn_texts)
-#         question = self._tokenize(concat_turn_texts.split(' '), concat_turn_texts)
-#         preproc_schema = self._preprocess_schema(item.schema)
-#         # 2 is for cls and sep special tokens. +1 is for sep
-#         num_words = len(question) + \
-#                     sum(len(c) + 1 for c in preproc_schema.column_names) + \
-#                     sum(len(t) + 1 for t in preproc_schema.table_names)
-#         if num_words > 512:
-#             return False, None  # remove long sequences
-#         else:
-#             return True, None
-#
-#     def _preprocess_schema(self, schema):
-#         if schema.db_id in self.preprocessed_schemas:
-#             return self.preprocessed_schemas[schema.db_id]
-#         result = preprocess_schema_uncached_bart(schema, self.tokenizer, self._tokenize,
-#                                             self.include_table_name_in_column,
-#                                             self.fix_issue_16_primary_keys, bart=True)
-#         self.preprocessed_schemas[schema.db_id] = result
-#         return result
-#
-#     def save(self):
-#         os.makedirs(self.data_dir, exist_ok=True)
-#         self.tokenizer.save_pretrained(self.data_dir)
-#
-#         for section, texts in self.texts.items():
-#             with open(os.path.join(self.data_dir, section + '.jsonl'), 'w') as f:
-#                 for text in texts:
-#                     f.write(json.dumps(text) + '\n')
-#
-#     def load(self):
-#         self.tokenizer = BartTokenizer.from_pretrained(self.data_dir)
 
 
 if __name__ == '__main__':
