@@ -1,11 +1,12 @@
 import os
-import json
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+
 import torch
-from transformers import BartModel, BartTokenizer, BartConfig
 from tqdm import tqdm
 
 from dataset import SparcDataset, DataLoader
-from model import SQLBart
+from model import SQLBartModel
 
 
 def main():
@@ -14,7 +15,7 @@ def main():
     dev_dataset = SparcDataset('sparc/dev.json', 'sparc/tables.json', 'sparc/database')
     train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, collate_fn=train_dataset.collate_fn)
     dev_dataloader = DataLoader(dev_dataset, batch_size=32, shuffle=False, collate_fn=dev_dataset.collate_fn)
-    sql_bart = SQLBart().to(device)
+    sql_bart = SQLBartModel().to(device)
     if torch.cuda.device_count() > 1:
         sql_bart = torch.nn.DataParallel(sql_bart)
 
