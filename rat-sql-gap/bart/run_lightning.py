@@ -45,14 +45,12 @@ class SQLBart(pl.LightningModule):
 if __name__ == '__main__':
     train_dataset = SparcDataset('sparc/train.json', 'sparc/tables.json', 'sparc/database')
     dev_dataset = SparcDataset('sparc/dev.json', 'sparc/tables.json', 'sparc/database')
-    train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, collate_fn=train_dataset.collate_fn)
-    dev_dataloader = DataLoader(dev_dataset, batch_size=32, shuffle=False, collate_fn=dev_dataset.collate_fn)
+    train_dataloader = DataLoader(train_dataset, batch_size=4, shuffle=True, collate_fn=train_dataset.collate_fn)
+    dev_dataloader = DataLoader(dev_dataset, batch_size=4, shuffle=False, collate_fn=dev_dataset.collate_fn)
 
     sql_bart = SQLBart()
     # most basic trainer, uses good defaults (auto-tensorboard, checkpoints, logs, and more)
-    # trainer = pl.Trainer(gpus=8) (if you have GPUs)
-    # trainer = pl.Trainer(gpus=2)
-    trainer = pl.Trainer(default_root_dir='bart/checkpoints', callbacks=[EarlyStopping(monitor='train_loss')])
+    trainer = pl.Trainer(gpus=4, default_root_dir='bart/checkpoints', callbacks=[EarlyStopping(monitor='train_loss')])
     trainer.fit(sql_bart, train_dataloader)
 
     # test
