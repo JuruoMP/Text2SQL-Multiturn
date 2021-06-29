@@ -593,7 +593,7 @@ def evaluate(gold, predict, db_dir, table, etype='match'):
                     "where": []
                 }
                 eval_err_num += 1
-                print("eval_err_num:{}".format(eval_err_num))
+                # print("eval_err_num:{}".format(eval_err_num))
 
             # rebuild sql for value evaluation
             kmap = kmaps[db_name]
@@ -618,9 +618,9 @@ def evaluate(gold, predict, db_dir, table, etype='match'):
                 partial_scores = evaluator.partial_scores
                 if exact_score == 0:
                     turn_scores['exact'].append(0)
-                    print("{} pred: {}".format(hardness, p_str))
-                    print("{} gold: {}".format(hardness, g_str))
-                    print("")
+                    # print("{} pred: {}".format(hardness, p_str))
+                    # print("{} gold: {}".format(hardness, g_str))
+                    # print("")
                 else:
                     turn_scores['exact'].append(1)
                 scores[turn_id]['exact'] += exact_score

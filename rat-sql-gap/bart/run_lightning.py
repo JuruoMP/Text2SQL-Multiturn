@@ -55,8 +55,8 @@ class SQLBart(pl.LightningModule):
         pred_list = [j for i in pred_list for j in i]
         pred_list = [''.join(x).replace('Ġ', ' ') for x in pred_list]
         gold = open('sparc/dev_gold.txt', 'r', encoding='utf-8').readlines()
-        if not os.path.exists('bart/tmp/'):
-            os.makedirs('bart/tmp/')
+        if not os.path.exists('bart/tmp'):
+            os.makedirs('bart/tmp')
         with open('bart/tmp/predict.txt', 'w') as fw:
             for pred in pred_list:
                 fw.write(pred + '\n')
