@@ -154,7 +154,7 @@ class SparcDataset(torch.utils.data.Dataset):
             'attention_mask': encoder_dict['attention_mask'],
             'decoder_input_ids': decoder_dict['input_ids'],
             'decoder_attention_mask': decoder_dict['attention_mask'],
-            'labels': decoder_dict['input_ids'],
+            'labels': copy.deepcopy(decoder_dict['input_ids']),
         }
 
     def tokenize_item(self, item):
@@ -171,7 +171,6 @@ class SparcDataset(torch.utils.data.Dataset):
         concat_input.rstrip(self.tokenizer.eos_token)
         encoder_dict = self.tokenizer(concat_input)
         decoder_dict = self.tokenizer(sql)
-        decoder_dict['input_ids'][0] = self.tokenizer.eos_token_id
         return encoder_dict, decoder_dict
 
     def validate_item(self, item):

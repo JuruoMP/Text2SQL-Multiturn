@@ -11,6 +11,7 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 from model import SQLBartModel
 from dataset import SparcDataset
+from evaluation import evaluate as evaluate_sparc
 
 
 class SQLBart(pl.LightningModule):
@@ -37,8 +38,34 @@ class SQLBart(pl.LightningModule):
         self.log('train_loss', masked_lm_loss)
         return masked_lm_loss
 
+    def validation_step(self, x, batch_idx):
+        lm_logits = self.model(x)
+        masked_lm_loss = self.loss_fct(lm_logits.view(-1, self.model.bart_config.vocab_size), x['labels'].view(-1))
+        self.log('val_loss', masked_lm_loss)
+        pred_ids = lm_logits.argmax(dim=-1)
+        pred_lfs = []
+        for i in range(pred_ids.size(0)):
+            pred_lf = self.model.bart_tokenizer.convert_ids_to_tokens(pred_ids[i])
+            # if self.model.bart_tokenizer.eos_token in pred_lf:
+            #     pred_lf = pred_lf[:pred_lf.index(self.model.bart_tokenizer.eos_token)]
+            pred_lfs.append(pred_lf)
+        return pred_lfs
+
+    def validation_epoch_end(self, pred_list):
+        pred_list = [j for i in pred_list for j in i]
+        pred_list = [''.join(x).replace('Ġ', ' ') for x in pred_list]
+        gold = open('sparc/dev_gold.txt', 'r', encoding='utf-8').readlines()
+        if not os.path.exists('bart/tmp/'):
+            os.makedirs('bart/tmp/')
+        with open('bart/tmp/predict.txt', 'w') as fw:
+            for pred in pred_list:
+                fw.write(pred + '\n')
+        exact_match_acc = evaluate_sparc('sparc/dev_gold.txt', 'bart/tmp/predict.txt', 'sparc/database', 'sparc/tables.json')
+        self.log('val_acc', exact_match_acc)
+        return
+
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters())
+        optimizer = torch.optim.AdamW(self.parameters(), lr=1e-3)
         return optimizer
 
 
@@ -50,8 +77,9 @@ if __name__ == '__main__':
 
     sql_bart = SQLBart()
     # most basic trainer, uses good defaults (auto-tensorboard, checkpoints, logs, and more)
-    trainer = pl.Trainer(gpus=4, default_root_dir='bart/checkpoints', callbacks=[EarlyStopping(monitor='train_loss')])
-    trainer.fit(sql_bart, train_dataloader)
+    trainer = pl.Trainer(gpus=-1, precision=16, default_root_dir='bart/checkpoints',
+                         callbacks=[EarlyStopping(monitor='val_loss', patience=10, mode='max')])
+    trainer.fit(sql_bart, train_dataloader, dev_dataloader)
 
     # test
     trainer.test(test_dataloaders=dev_dataloader)
