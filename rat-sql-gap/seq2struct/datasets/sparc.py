@@ -16,6 +16,7 @@ class SparcItem:
     schema = attr.ib()
     orig = attr.ib()
     orig_schema = attr.ib()
+    final = attr.ib()
 
 
 @attr.s
@@ -209,7 +210,9 @@ class SparcDataset(torch.utils.data.Dataset):
                         code=interaction['sql'],
                         schema=self.schemas[entry['database_id']],
                         orig=(entry, i),
-                        orig_schema=self.schemas[entry['database_id']].orig)
+                        orig_schema=self.schemas[entry['database_id']].orig,
+                        final=entry['final'] if i == len(entry['interaction']) - 1 else None
+                    )
                     self.examples.append(item)
 
         print('Sparc dataset built.')

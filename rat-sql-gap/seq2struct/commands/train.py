@@ -269,6 +269,7 @@ def main(args):
     trainer = Trainer(logger, config)
     trainer.train(config, modeldir=args.logdir)
 
+
 if __name__ == '__main__':
     args = add_parser()
     main(args)

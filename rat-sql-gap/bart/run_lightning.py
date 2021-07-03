@@ -62,6 +62,7 @@ class SQLBart(pl.LightningModule):
                 fw.write(pred + '\n')
         exact_match_acc = evaluate_sparc('sparc/dev_gold.txt', 'bart/tmp/predict.txt', 'sparc/database', 'sparc/tables.json')
         self.log('val_acc', exact_match_acc)
+        print(f'Validation exact match acc = {exact_match_acc:.3f}')
         return
 
     def configure_optimizers(self):
@@ -78,6 +79,8 @@ if __name__ == '__main__':
     sql_bart = SQLBart()
     # most basic trainer, uses good defaults (auto-tensorboard, checkpoints, logs, and more)
     trainer = pl.Trainer(gpus=-1, precision=16, default_root_dir='bart/checkpoints',
+                         val_check_interval=2., terminate_on_nan=True,
+                         gradient_clip_val=5, gradient_clip_algorithm='value',
                          callbacks=[EarlyStopping(monitor='val_loss', patience=10, mode='max')])
     trainer.fit(sql_bart, train_dataloader, dev_dataloader)
 

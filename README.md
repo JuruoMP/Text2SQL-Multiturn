@@ -102,6 +102,13 @@ This project is licensed under the Apache-2.0 License.
 
 Prepare
 ```bash
+# Please install anaconda/miniconda first
+conda create -n text2sql python=3.7
+conda activate text2sql
+pip install torch==1.7.1+cu110 torchvision==0.8.2+cu110 torchaudio==0.7.2 -f https://download.pytorch.org/whl/torch_stable.html
+pip install -r requirements
+pip install -U transformers
+
 cd rat-sql-gap
 mkdir third_party
 wget http://nlp.stanford.edu/software/stanford-corenlp-full-2018-10-05.zip

@@ -73,10 +73,25 @@ class EncDecModel(torch.nn.Module):
         else:
             self.compute_loss = self._compute_loss_unbatched
 
+        self.align_weight = 100
+
     def _compute_loss_enc_batched(self, batch, debug=False):
         losses = []
         d = [enc_input for enc_input, dec_output in batch]
         enc_states = self.encoder(d)
+
+        align_losses = []
+        final_d_id = [i for i, (enc_input, dec_output) in enumerate(batch) if 'final_nl' in enc_input is not None]
+        final_d = [enc_input['final_nl'] for enc_input, dec_output in batch if 'final_nl' in enc_input]
+        final_enc_states = [None for _ in range(len(d))]
+        if len(final_d_id) > 0:
+            for i, state in zip(final_d_id, self.encoder(final_d)):
+                final_enc_states[i] = state
+        for enc, final_enc in zip(enc_states, final_enc_states):
+            if final_enc is not None:
+                enc_cls, final_enc_cls = enc.cls_vec, final_enc.cls_vec
+                align_losses.append(torch.nn.functional.mse_loss(enc_cls, final_enc_cls))
+        align_loss = torch.stack(align_losses).mean() if len(align_losses) > 0 else 0
 
         for enc_state, (enc_input, dec_output) in zip(enc_states, batch):
             loss = self.decoder.compute_loss(enc_input, dec_output, enc_state, debug)
@@ -84,7 +99,7 @@ class EncDecModel(torch.nn.Module):
         if debug:
             return losses
         else:
-            return torch.mean(torch.stack(losses, dim=0), dim=0)
+            return torch.mean(torch.stack(losses, dim=0), dim=0) + self.align_weight * align_loss
 
     def _compute_loss_enc_batched2(self, batch, debug=False):
         losses = []

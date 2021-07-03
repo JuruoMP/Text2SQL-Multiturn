@@ -38,6 +38,7 @@ class SparcEncoderState:
 
     m2c_align_mat = attr.ib()
     m2t_align_mat = attr.ib()
+    cls_vec = attr.ib()
 
     def find_word_occurrences(self, word):
         return [i for i, w in enumerate(self.words) if w == word]
@@ -918,9 +919,9 @@ class SparcEncoderBert(torch.nn.Module):
                             c_boundary,
                             tab_enc.unsqueeze(1),
                             t_boundary)
-            import pickle
-            pickle.dump({"desc": desc, "q_enc": q_enc, "col_enc": col_enc, "c_boundary": c_boundary, "tab_enc": tab_enc,
-                         "t_boundary": t_boundary}, open("descs_{}.pkl".format(batch_idx), "wb"))
+            # import pickle
+            # pickle.dump({"desc": desc, "q_enc": q_enc, "col_enc": col_enc, "c_boundary": c_boundary, "tab_enc": tab_enc,
+            #              "t_boundary": t_boundary}, open("descs_{}.pkl".format(batch_idx), "wb"))
 
 
             memory = []
@@ -1232,7 +1233,7 @@ class SparcEncoderBartPreproc(SparcEncoderV2Preproc):
         else:
             cv_link = {"num_date_match": {}, "cell_match": {}}
 
-        return {
+        ret_dict = {
             'raw_question': concat_turn_texts,
             'question': question,
             'db_id': item.schema.db_id,
@@ -1247,6 +1248,41 @@ class SparcEncoderBartPreproc(SparcEncoderV2Preproc):
             'foreign_keys_tables': preproc_schema.foreign_keys_tables,
             'primary_keys': preproc_schema.primary_keys,
         }
+
+        if item.final is not None:
+            final_nl = item.final['utterance']
+            final_nl_question = self._tokenize(final_nl.split(' '), final_nl)
+            final_nl_bart_tokens = BartTokens(final_nl, self.tokenizer)
+            if self.compute_sc_link:
+                # We do not want to transform pieces back to word.
+                final_nl_sc_link = final_nl_bart_tokens.bart_schema_linking(
+                    preproc_schema.normalized_column_names,
+                    preproc_schema.normalized_table_names
+                )
+            else:
+                final_nl_sc_link = {"q_col_match": {}, "q_tab_match": {}}
+            if self.compute_cv_link:
+                final_nl_cv_link = final_nl_bart_tokens.bart_cv_linking(item.schema, self.db_path)
+            else:
+                final_nl_cv_link = {"num_date_match": {}, "cell_match": {}}
+            final_nl_dict = {
+                'raw_question': final_nl,
+                'question': final_nl_question,
+                'db_id': item.schema.db_id,
+                'sc_link': final_nl_sc_link,
+                'cv_link': final_nl_cv_link,
+                'columns': preproc_schema.column_names,
+                'tables': preproc_schema.table_names,
+                'table_bounds': preproc_schema.table_bounds,
+                'column_to_table': preproc_schema.column_to_table,
+                'table_to_columns': preproc_schema.table_to_columns,
+                'foreign_keys': preproc_schema.foreign_keys,
+                'foreign_keys_tables': preproc_schema.foreign_keys_tables,
+                'primary_keys': preproc_schema.primary_keys,
+            }
+            ret_dict.update({'final_nl': final_nl_dict})
+
+        return ret_dict
 
     def validate_item(self, item, section):
         turn_texts = [' '.join(x) for x in item.text]
@@ -1392,11 +1428,11 @@ class SparcEncoderBart(torch.nn.Module):
             indexed_token_list = self.tokenizer.convert_tokens_to_ids(token_list)
             batch_token_lists.append(indexed_token_list)
 
-            question_rep_ids = torch.LongTensor(question_indexes, device=self._device)
+            question_rep_ids = torch.LongTensor(question_indexes).to(self._device)
             batch_id_to_retrieve_question.append(question_rep_ids)
-            column_rep_ids = torch.LongTensor(column_indexes, device=self._device)
+            column_rep_ids = torch.LongTensor(column_indexes).to(self._device)
             batch_id_to_retrieve_column.append(column_rep_ids)
-            table_rep_ids = torch.LongTensor(table_indexes, device=self._device)
+            table_rep_ids = torch.LongTensor(table_indexes).to(self._device)
             batch_id_to_retrieve_table.append(table_rep_ids)
             if self.summarize_header == "avg":
                 assert (all(i2 >= i1 for i1, i2 in zip(column_indexes, column_indexes_2)))
@@ -1409,8 +1445,8 @@ class SparcEncoderBart(torch.nn.Module):
             batch_id_map[batch_idx] = len(batch_id_map)
 
         padded_token_lists, att_mask_lists, tok_type_lists = self.pad_sequence_for_bert_batch(batch_token_lists)
-        tokens_tensor = torch.LongTensor(padded_token_lists, device=self._device)
-        att_masks_tensor = torch.LongTensor(att_mask_lists, device=self._device)
+        tokens_tensor = torch.LongTensor(padded_token_lists).to(self._device)
+        att_masks_tensor = torch.LongTensor(att_mask_lists).to(self._device)
 
 
         bert_output = self.bert_model(tokens_tensor, attention_mask=att_masks_tensor)[0]
@@ -1440,9 +1476,11 @@ class SparcEncoderBart(torch.nn.Module):
             t_boundary = list(range(len(desc["tables"]) + 1))
 
             if batch_idx in long_seq_set:
+                raise Exception('Too long utterance is not supported')
                 q_enc, col_enc, tab_enc = self.encoder_long_seq(desc)
             else:
                 bert_batch_idx = batch_id_map[batch_idx]
+                cls_vec = enc_output[bert_batch_idx][0]
                 q_enc = enc_output[bert_batch_idx][batch_id_to_retrieve_question[bert_batch_idx]]
                 col_enc = enc_output[bert_batch_idx][batch_id_to_retrieve_column[bert_batch_idx]]
                 tab_enc = enc_output[bert_batch_idx][batch_id_to_retrieve_table[bert_batch_idx]]
@@ -1466,8 +1504,8 @@ class SparcEncoderBart(torch.nn.Module):
                     c_boundary,
                     tab_enc.unsqueeze(1),
                     t_boundary)
-            pickle.dump({"desc": desc, "q_enc": q_enc, "col_enc": col_enc, "c_boundary": c_boundary, "tab_enc": tab_enc,
-                         "t_boundary": t_boundary}, open("descs_{}.pkl".format(batch_idx), "wb"))
+            # pickle.dump({"desc": desc, "q_enc": q_enc, "col_enc": col_enc, "c_boundary": c_boundary, "tab_enc": tab_enc,
+            #              "t_boundary": t_boundary}, open("descs_{}.pkl".format(batch_idx), "wb"))
 
             memory = []
             if 'question' in self.include_in_memory:
@@ -1495,6 +1533,7 @@ class SparcEncoderBart(torch.nn.Module):
                 },
                 m2c_align_mat=align_mat_item[0],
                 m2t_align_mat=align_mat_item[1],
+                cls_vec=cls_vec
             ))
         return result
 
