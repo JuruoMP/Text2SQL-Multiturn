@@ -14,6 +14,7 @@ from seq2struct.datasets.spider_lib import evaluation
 
 @attr.s
 class SparcItem:
+    id = attr.ib()
     text = attr.ib()
     code = attr.ib()
     schema = attr.ib()
@@ -133,6 +134,7 @@ class SparcDataset(torch.utils.data.Dataset):
                 new_toks = interaction['utterance_toks']
                 accumulated_toks.append(new_toks)
                 item = SparcItem(
+                    id=len(self.examples),
                     text=copy.deepcopy(accumulated_toks),
                     code=interaction['query'],
                     schema=self.schemas[entry['database_id']],
@@ -150,6 +152,7 @@ class SparcDataset(torch.utils.data.Dataset):
         item = self.examples[idx]
         encoder_dict, decoder_dict = self.tokenize_item(item)
         return {
+            'id': item.id,
             'input_ids': encoder_dict['input_ids'],
             'attention_mask': encoder_dict['attention_mask'],
             'decoder_input_ids': decoder_dict['input_ids'],

@@ -46,24 +46,33 @@ class SQLBart(pl.LightningModule):
         pred_lfs = []
         for i in range(pred_ids.size(0)):
             pred_lf = self.model.bart_tokenizer.convert_ids_to_tokens(pred_ids[i])
-            # if self.model.bart_tokenizer.eos_token in pred_lf:
-            #     pred_lf = pred_lf[:pred_lf.index(self.model.bart_tokenizer.eos_token)]
-            pred_lfs.append(pred_lf)
-        return pred_lfs
+            pred_lfs.append((x['id'][i].item(), pred_lf))
+        return (pred_lfs, masked_lm_loss)
 
-    def validation_epoch_end(self, pred_list):
-        pred_list = [j for i in pred_list for j in i]
-        pred_list = [''.join(x).replace('Ġ', ' ') for x in pred_list]
-        gold = open('sparc/dev_gold.txt', 'r', encoding='utf-8').readlines()
-        if not os.path.exists('bart/tmp'):
-            os.makedirs('bart/tmp')
-        with open('bart/tmp/predict.txt', 'w') as fw:
-            for pred in pred_list:
-                fw.write(pred + '\n')
-        exact_match_acc = evaluate_sparc('sparc/dev_gold.txt', 'bart/tmp/predict.txt', 'sparc/database', 'sparc/tables.json')
-        self.log('val_acc', exact_match_acc)
-        print(f'Validation exact match acc = {exact_match_acc:.3f}')
-        return
+    def validation_epoch_end(self, val_ret):
+        if self.global_rank == 0:
+            pred_list = [j for i in val_ret for j in i[0]]
+            losses = [i[1].item() for i in val_ret]
+            avg_loss = sum(losses) / len(losses)
+            new_pred_list = []
+            for i in range(len(pred_list)):
+                idx, pred = pred_list[i]
+                pred = [x for x in pred if x not in (self.model.bart_tokenizer.bos_token, self.model.bart_tokenizer.eos_token)]
+                pred = ''.join(pred).replace('Ġ', ' ')
+                new_pred_list.append((idx, pred))
+            if not os.path.exists('bart/predict'):
+                os.makedirs('bart/predict')
+            new_pred_list = sorted(new_pred_list, key=lambda x: x[0])
+            with open('bart/predict/predict.txt', 'w') as fw:
+                for idx, pred in new_pred_list:
+                    fw.write(pred + '\n')
+            if self.current_epoch % 10 == 0:
+                with open(f'bart/predict/predict_{self.current_epoch}.txt', 'w') as fw:
+                    for idx, pred in new_pred_list:
+                        fw.write(pred + '\n')
+            exact_match_acc = evaluate_sparc('sparc/dev_gold.txt', 'bart/predict/predict.txt', 'sparc/database', 'sparc/tables.json')
+            self.log('val_acc', exact_match_acc)
+            print(f'Validation exact match acc = {exact_match_acc:.3f}, loss = {avg_loss:.3e}')
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=1e-5)
@@ -77,12 +86,10 @@ if __name__ == '__main__':
     dev_dataloader = DataLoader(dev_dataset, batch_size=4, shuffle=False, collate_fn=dev_dataset.collate_fn)
 
     sql_bart = SQLBart()
-    # most basic trainer, uses good defaults (auto-tensorboard, checkpoints, logs, and more)
     trainer = pl.Trainer(gpus=-1, precision=16, default_root_dir='bart/checkpoints',
-                         val_check_interval=2., terminate_on_nan=True,
+                         terminate_on_nan=True,
                          gradient_clip_val=5, gradient_clip_algorithm='value',
                          callbacks=[EarlyStopping(monitor='val_loss', patience=10, mode='max')])
     trainer.fit(sql_bart, train_dataloader, dev_dataloader)
 
-    # test
     trainer.test(test_dataloaders=dev_dataloader)
