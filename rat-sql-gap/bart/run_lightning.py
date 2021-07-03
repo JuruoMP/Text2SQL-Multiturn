@@ -89,7 +89,7 @@ if __name__ == '__main__':
     trainer = pl.Trainer(gpus=-1, precision=16, default_root_dir='bart/checkpoints',
                          terminate_on_nan=True,
                          gradient_clip_val=5, gradient_clip_algorithm='value',
-                         callbacks=[EarlyStopping(monitor='val_loss', patience=10, mode='max')])
+                         callbacks=[EarlyStopping(monitor='val_loss', patience=10, mode='min')])
     trainer.fit(sql_bart, train_dataloader, dev_dataloader)
 
     trainer.test(test_dataloaders=dev_dataloader)
