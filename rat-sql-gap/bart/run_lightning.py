@@ -57,7 +57,10 @@ class SQLBart(pl.LightningModule):
             new_pred_list = []
             for i in range(len(pred_list)):
                 idx, pred = pred_list[i]
-                pred = [x for x in pred if x not in (self.model.bart_tokenizer.bos_token, self.model.bart_tokenizer.eos_token)]
+                if self.model.bart_tokenizer.eos_token in pred:
+                    pred = pred[1:pred.index(self.model.bart_tokenizer.eos_token)]
+                else:
+                    pred = pred[1:]
                 pred = ''.join(pred).replace('Ġ', ' ')
                 new_pred_list.append((idx, pred))
             if not os.path.exists('bart/predict'):
