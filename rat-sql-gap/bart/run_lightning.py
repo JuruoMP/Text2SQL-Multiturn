@@ -66,7 +66,7 @@ class SQLBart(pl.LightningModule):
         return
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters(), lr=1e-3)
+        optimizer = torch.optim.AdamW(self.parameters(), lr=1e-5)
         return optimizer
 
 
