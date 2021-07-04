@@ -167,9 +167,10 @@ class SparcDataset(torch.utils.data.Dataset):
 
     def tokenize_item(self, item):
         nl = ' '.join([t for s in item.text for t in s])
-        sql = item.code.lower()
+        sql = ' ' + item.code.lower() + ' '
         for token in SQL_RESERVE_TOKENS:
-            sql = sql.replace(token, token.upper())
+            sql = sql.replace(' ' + token + ' ', ' ' + token.upper() + ' ')
+        sql = sql.strip()
         columns = []
         for c in item.schema.columns:
             if c and c.table:
