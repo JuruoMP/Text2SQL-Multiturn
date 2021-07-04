@@ -517,14 +517,14 @@ def evaluate(gold, predict, db_dir, table, etype='match'):
                 pseq_one.append(l.strip().split('\t'))
         # plist = [l.strip().split('\t') for l in f.readlines() if len(l.strip()) > 0]
 
-    try:
-        plist_flat = [j for i in plist for j in i]
-        plist = []
-        for gseq_one in glist:
-            plist.append(plist_flat[:len(gseq_one)])
-            plist_flat = plist_flat[len(gseq_one):]
-    except:
-        return -1
+    # try:
+    #     plist_flat = [j for i in plist for j in i]
+    #     plist = []
+    #     for gseq_one in glist:
+    #         plist.append(plist_flat[:len(gseq_one)])
+    #         plist_flat = plist_flat[len(gseq_one):]
+    # except:
+    #     return -1
 
     # plist = [[("select product_type_code from products group by product_type_code order by count ( * ) desc limit value", "orchestra")]]
     # glist = [[("SELECT product_type_code FROM Products GROUP BY product_type_code ORDER BY count(*) DESC LIMIT 1", "customers_and_orders")]]

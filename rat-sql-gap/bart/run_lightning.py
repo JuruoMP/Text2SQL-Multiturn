@@ -63,16 +63,22 @@ class SQLBart(pl.LightningModule):
                     pred = pred[1:]
                 pred = ''.join(pred).replace('Ġ', ' ')
                 new_pred_list.append((idx, pred))
+
+            gold = open('sparc/dev_gold.txt', 'r', encoding='utf-8').readlines()
             if not os.path.exists('bart/predict'):
                 os.makedirs('bart/predict')
             new_pred_list = sorted(new_pred_list, key=lambda x: x[0])
             with open('bart/predict/predict.txt', 'w') as fw:
                 for idx, pred in new_pred_list:
                     fw.write(pred + '\n')
+                del gold[0]
+                if gold[0].strip() == '':
+                    del gold[0]
+                    fw.write('\n')
             if self.current_epoch % 10 == 0:
                 with open(f'bart/predict/predict_{self.current_epoch}.txt', 'w') as fw:
-                    for idx, pred in new_pred_list:
-                        fw.write(pred + '\n')
+                    with open('bart/predict/predict.txt', 'r') as fr:
+                        fw.writelines(fr.readlines())
             exact_match_acc = evaluate_sparc('sparc/dev_gold.txt', 'bart/predict/predict.txt', 'sparc/database', 'sparc/tables.json')
             self.log('val_acc', exact_match_acc)
             print(f'Validation exact match acc = {exact_match_acc:.3f}, loss = {avg_loss:.3e}')
