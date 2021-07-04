@@ -14,7 +14,8 @@ from seq2struct.datasets.spider_lib import evaluation
 
 SQL_RESERVE_TOKENS = ['select', 'from', 'where', 'group by', 'having', 'order by', 'desc', 'asc',
                       'distinct', 'and', 'or', 'not', 'between', 'not in', 'in', 'like', 'not exists', 'exists',
-                      'as', 'with', 'union', 'intersect', 'except', 'join', 'max', 'min', 'avg', 'sum', 'count']
+                      'as', 'with', 'union', 'intersect', 'except', 'join', 'limit']
+SQL_RESERVE_AGGRS = ['max', 'min', 'avg', 'sum', 'count']
 
 
 @attr.s
@@ -170,6 +171,8 @@ class SparcDataset(torch.utils.data.Dataset):
         sql = ' ' + item.code.lower() + ' '
         for token in SQL_RESERVE_TOKENS:
             sql = sql.replace(' ' + token + ' ', ' ' + token.upper() + ' ')
+        for token in SQL_RESERVE_AGGRS:
+            sql = sql.replace(token + '(', token.upper() + '(')
         sql = sql.strip()
         columns = []
         for c in item.schema.columns:
