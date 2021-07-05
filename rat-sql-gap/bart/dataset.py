@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import attr
 import copy
@@ -168,7 +169,8 @@ class SparcDataset(torch.utils.data.Dataset):
 
     def tokenize_item(self, item):
         nl = ' '.join([t for s in item.text for t in s])
-        sql = ' ' + item.code.lower() + ' '
+        sql = item.code.replace("'", '"')
+        sql = ' ' + re.sub(r'\b(?<!")(\w+)(?!")\b', lambda match: match.group(1).lower(), sql) + ' '
         for token in SQL_RESERVE_TOKENS:
             sql = sql.replace(' ' + token + ' ', ' ' + token.upper() + ' ')
         for token in SQL_RESERVE_AGGRS:
@@ -181,7 +183,7 @@ class SparcDataset(torch.utils.data.Dataset):
                 columns.append((tn, cn))
         concat_input = nl + self.tokenizer.eos_token
         for c in columns:
-            concat_input += ' <c> ' + c[0] + ' </c> <t> ' + c[1] + ' </t> '
+            concat_input += ' <c>' + c[1].lower() + '<t>' + c[0].lower() + '</c>'
         encoder_dict = self.tokenizer(concat_input)
         decoder_dict = self.tokenizer(sql)
         return encoder_dict, decoder_dict
@@ -242,7 +244,8 @@ class SparcDataset(torch.utils.data.Dataset):
 
 
 if __name__ == '__main__':
-    train_data = SparcDataset('sparc/train.json', 'sparc/tables.json', 'sparc/database')
+    bart_tokenizer = BartTokenizer.from_pretrained('facebook/bart-large', additional_special_tokens=['<c>', '</c>', '<t>'])
+    train_data = SparcDataset('sparc/train.json', 'sparc/tables.json', 'sparc/database', bart_tokenizer)
     dataloader = torch.utils.data.DataLoader(train_data, batch_size=7, collate_fn=train_data.collate_fn)
     for batch in dataloader:
         a = 1
