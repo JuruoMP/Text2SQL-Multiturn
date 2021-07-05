@@ -56,6 +56,8 @@ class SQLBart(pl.LightningModule):
     def validation_epoch_end(self, val_ret):
         if self.global_rank == 0:
             pred_list = [j for i in val_ret for j in i[0]]
+            with open('bart/predict/tmp.txt', 'w') as fw:
+                fw.writelines([str(x) + '\n' for x in pred_list])
             losses = [i[1].item() for i in val_ret]
             avg_loss = sum(losses) / len(losses)
             new_pred_list = []
@@ -68,21 +70,28 @@ class SQLBart(pl.LightningModule):
                 pred = ''.join(pred).replace('Ġ', ' ')
                 new_pred_list.append((idx, pred))
 
-            gold = open('sparc/dev_gold.txt', 'r', encoding='utf-8').readlines()
+            gold = [x.strip() for x in open('sparc/dev_gold.txt', 'r', encoding='utf-8').readlines()]
             if not os.path.exists('bart/predict'):
                 os.makedirs('bart/predict')
             new_pred_list = sorted(new_pred_list, key=lambda x: x[0])
-            with open('bart/predict/predict.txt', 'w') as fw:
-                for idx, pred in new_pred_list:
-                    fw.write(pred + '\n')
+            pred_lines, pred_gold_pairs = [], []
+            for idx, pred in new_pred_list:
+                pred_lines.append(pred + '\n')
+                pred_gold_pairs.append((pred, gold[0]))
+                del gold[0]
+                if gold[0] == '':
                     del gold[0]
-                    if gold[0].strip() == '':
-                        del gold[0]
-                        fw.write('\n')
-            if self.current_epoch % 10 == 0:
-                with open(f'bart/predict/predict_{self.current_epoch}.txt', 'w') as fw:
-                    with open('bart/predict/predict.txt', 'r') as fr:
-                        fw.writelines(fr.readlines())
+                    pred_lines.append('\n')
+                    pred_gold_pairs.append((None, None))
+            with open('bart/predict/predict.txt', 'w') as fw:
+                fw.writelines(pred_lines)
+            if self.current_epoch % 1 == 0:
+                with open('bart/predict/predict_debug.txt', 'w') as fw:
+                    for pred, gold in pred_gold_pairs:
+                        if pred and gold:
+                            fw.write(pred + '\n' + gold + '\n')
+                        else:
+                            fw.write('\n')
             exact_match_acc = evaluate_sparc('sparc/dev_gold.txt', 'bart/predict/predict.txt', 'sparc/database', 'sparc/tables.json')
             self.log('val_acc', exact_match_acc, prog_bar=True)
             # print(f'Validation exact match acc = {exact_match_acc:.3f}, loss = {avg_loss:.3e}')
@@ -107,12 +116,12 @@ if __name__ == '__main__':
     bart_tokenizer = BartTokenizer.from_pretrained('facebook/bart-large', additional_special_tokens=['<c>', '</c>', '<t>'])
     train_dataset = SparcDataset('sparc/train.json', 'sparc/tables.json', 'sparc/database', tokenizer=bart_tokenizer)
     dev_dataset = SparcDataset('sparc/dev.json', 'sparc/tables.json', 'sparc/database', tokenizer=bart_tokenizer)
-    train_dataloader = DataLoader(train_dataset, batch_size=8, shuffle=True, collate_fn=train_dataset.collate_fn)
-    dev_dataloader = DataLoader(dev_dataset, batch_size=8, shuffle=False, collate_fn=dev_dataset.collate_fn)
+    train_dataloader = DataLoader(train_dataset, batch_size=4, shuffle=True, collate_fn=train_dataset.collate_fn)
+    dev_dataloader = DataLoader(dev_dataset, batch_size=4, shuffle=False, collate_fn=dev_dataset.collate_fn)
 
     sql_bart = SQLBart(bart_tokenizer)
     trainer = pl.Trainer(gpus=-1, precision=16, default_root_dir='bart/checkpoints',
-                         terminate_on_nan=True,
+                         terminate_on_nan=True, accumulate_grad_batches=2,
                          gradient_clip_val=5, gradient_clip_algorithm='value',
                          callbacks=[EarlyStopping(monitor='val_loss', patience=10, mode='min')])
     trainer.fit(sql_bart, train_dataloader, dev_dataloader)
