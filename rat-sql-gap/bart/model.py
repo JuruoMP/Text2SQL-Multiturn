@@ -8,7 +8,6 @@ class SQLBartModel(nn.Module):
         super().__init__()
         config_name = 'facebook/bart-large'
         self.bart_config = BartConfig.from_pretrained(config_name, cache_dir='bart/cache')
-        self.bart_tokenizer = BartTokenizer.from_pretrained(config_name, cache_dir='bart/cache')
         self.bart_model = BartModel.from_pretrained(config_name, cache_dir='bart/cache')
         self.register_buffer("final_logits_bias", torch.zeros((1, self.bart_model.shared.num_embeddings)))
         self.lm_head = nn.Linear(self.bart_config.d_model, self.bart_model.shared.num_embeddings, bias=False)

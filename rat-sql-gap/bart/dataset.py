@@ -123,12 +123,12 @@ def load_tables(path):
 
 
 class SparcDataset(torch.utils.data.Dataset):
-    def __init__(self, path, tables_paths, db_path, limit=None):
+    def __init__(self, path, tables_paths, db_path, tokenizer, limit=None):
         self.path = path
         self.db_path = db_path
         self.examples = []
         self.use_column_type = False
-        self.tokenizer = BartTokenizer.from_pretrained('facebook/bart-large')
+        self.tokenizer = tokenizer
         self.max_seq_len = self.tokenizer.model_max_length
 
         self.schemas, self.eval_foreign_key_maps = load_tables(tables_paths)
@@ -181,8 +181,7 @@ class SparcDataset(torch.utils.data.Dataset):
                 columns.append((tn, cn))
         concat_input = nl + self.tokenizer.eos_token
         for c in columns:
-            concat_input += c[0] + ' ' + c[1] + self.tokenizer.eos_token
-        concat_input.rstrip(self.tokenizer.eos_token)
+            concat_input += ' <c> ' + c[0] + ' </c> <t> ' + c[1] + ' </t> '
         encoder_dict = self.tokenizer(concat_input)
         decoder_dict = self.tokenizer(sql)
         return encoder_dict, decoder_dict
