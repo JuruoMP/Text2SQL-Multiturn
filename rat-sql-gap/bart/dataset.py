@@ -183,7 +183,7 @@ class SparcDataset(torch.utils.data.Dataset):
                 columns.append((tn, cn))
         concat_input = nl + self.tokenizer.eos_token
         for c in columns:
-            concat_input += ' <c>' + c[1].lower() + '<t>' + c[0].lower() + '</c>'
+            concat_input += ' <c>' + c[0].lower() + '</s>' + c[1].lower()
         encoder_dict = self.tokenizer(concat_input)
         decoder_dict = self.tokenizer(sql)
         return encoder_dict, decoder_dict
