@@ -1,10 +1,13 @@
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+import time
 
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, random_split
+from torch.nn.utils.rnn import pad_sequence
+import torch.distributed as dist
 from transformers import BartTokenizer
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -39,43 +42,56 @@ class SQLBart(pl.LightningModule):
         masked_lm_loss = self.loss_fct(lm_logits.view(-1, self.model.bart_config.vocab_size), x['labels'].view(-1))
 
         # Logging to TensorBoard by default
-        self.log('train_loss', masked_lm_loss)
+        self.log('train_loss', masked_lm_loss, sync_dist=True)
         return masked_lm_loss
+
+    # def validation_step(self, x, batch_idx):
+    #     lm_logits = self.model(x)
+    #     masked_lm_loss = self.loss_fct(lm_logits.view(-1, self.model.bart_config.vocab_size), x['labels'].view(-1))
+    #     pred_ids = lm_logits.argmax(dim=-1)
+    #     pred_lfs = []
+    #     for i in range(pred_ids.size(0)):
+    #         pred_lf = self.tokenizer.convert_ids_to_tokens(pred_ids[i])
+    #         pred_lfs.append((x['id'][i].item(), pred_lf))
+    #     self.log('val_loss', masked_lm_loss, sync_dist=True, prog_bar=True)
+    #     return {'pred_lfs': pred_lfs, 'loss': masked_lm_loss}
 
     def validation_step(self, x, batch_idx):
         lm_logits = self.model(x)
         masked_lm_loss = self.loss_fct(lm_logits.view(-1, self.model.bart_config.vocab_size), x['labels'].view(-1))
-        self.log('val_loss', masked_lm_loss, prog_bar=True)
         pred_ids = lm_logits.argmax(dim=-1)
-        pred_lfs = []
-        for i in range(pred_ids.size(0)):
-            pred_lf = self.tokenizer.convert_ids_to_tokens(pred_ids[i])
-            pred_lfs.append((x['id'][i].item(), pred_lf))
-        return (pred_lfs, masked_lm_loss)
+        self.log('val_loss', masked_lm_loss, sync_dist=True, prog_bar=True)
+        return {'ids': x['id'], 'pred_ids': pred_ids, 'loss': masked_lm_loss}
 
-    def validation_epoch_end(self, val_ret):
+    def validation_epoch_end(self, validation_step_output):
+        all_device_pred_dict = self.all_gather(validation_step_output)
         if self.global_rank == 0:
-            pred_list = [j for i in val_ret for j in i[0]]
-            with open('bart/predict/tmp.txt', 'w') as fw:
-                fw.writelines([str(x) + '\n' for x in pred_list])
-            losses = [i[1].item() for i in val_ret]
-            avg_loss = sum(losses) / len(losses)
-            new_pred_list = []
-            for i in range(len(pred_list)):
-                idx, pred = pred_list[i]
-                if self.tokenizer.eos_token in pred:
-                    pred = pred[1:pred.index(self.tokenizer.eos_token)]
-                else:
-                    pred = pred[1:]
-                pred = ''.join(pred).replace('Ġ', ' ')
-                new_pred_list.append((idx, pred))
+            for device_pred_dict in all_device_pred_dict:
+                all_pred_ids_list = device_pred_dict['pred_ids'].view(-1, device_pred_dict['pred_ids'].size(-1))
+                all_pred_ids = pad_sequence(all_pred_ids_list)
+                pred_dict = {}
+                for i in range(all_pred_ids.size(0)):
+                    t1 = time.time()
+                    print('111111111111111')
+                    print(all_pred_ids[i])
+                    pred_lf = self.tokenizer.convert_ids_to_tokens(all_pred_ids[i])
+                    print('222222222222222')
+                    if self.tokenizer.eos_token in pred_lf:
+                        pred_lf = pred_lf[1:pred_lf.index(self.tokenizer.eos_token)]
+                    else:
+                        pred_lf = pred_lf[1:]
+                    print('333333333333333')
+                    pred_lf = ''.join(pred_lf).replace('Ġ', ' ')
+                    pred_dict[device_pred_dict['ids'][i].item()] = pred_lf
+                    print('444444444444444')
+                    t2 = time.time()
+                    print(f'convert time = {t2-t1:.2f}')
 
             gold = [x.strip() for x in open('sparc/dev_gold.txt', 'r', encoding='utf-8').readlines()]
-            if not os.path.exists('bart/predict'):
-                os.makedirs('bart/predict')
-            new_pred_list = sorted(new_pred_list, key=lambda x: x[0])
+            all_pred_list = sorted(pred_dict.items(), key=lambda x: x[0])
+
             pred_lines, pred_gold_pairs = [], []
-            for idx, pred in new_pred_list:
+            for idx, pred in all_pred_list:
                 pred_lines.append(pred + '\n')
                 pred_gold_pairs.append((pred, gold[0]))
                 del gold[0]
@@ -94,22 +110,21 @@ class SQLBart(pl.LightningModule):
                             fw.write('\n')
             exact_match_acc = evaluate_sparc('sparc/dev_gold.txt', 'bart/predict/predict.txt', 'sparc/database', 'sparc/tables.json')
             self.log('val_acc', exact_match_acc, prog_bar=True)
-            # print(f'Validation exact match acc = {exact_match_acc:.3f}, loss = {avg_loss:.3e}')
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
         return optimizer
 
-    def optimizer_step(
-        self, epoch, batch_idx, optimizer, optimizer_idx, optimizer_closure,
-        on_tpu=False, using_native_amp=False, using_lbfgs=False,
-    ):
-        if self.trainer.global_step <= 100:
-            lr_scale = min(1., float(self.trainer.global_step + 1) / 100.)
-            for pg in optimizer.param_groups:
-                pg['lr'] = lr_scale * self.learning_rate
-
-        optimizer.step(closure=optimizer_closure)
+    # def optimizer_step(
+    #     self, epoch, batch_idx, optimizer, optimizer_idx, optimizer_closure,
+    #     on_tpu=False, using_native_amp=False, using_lbfgs=False,
+    # ):
+    #     if self.trainer.global_step <= 100:
+    #         lr_scale = min(1., float(self.trainer.global_step + 1) / 100.)
+    #         for pg in optimizer.param_groups:
+    #             pg['lr'] = lr_scale * self.learning_rate
+    #
+    #     optimizer.step(closure=optimizer_closure)
 
 
 if __name__ == '__main__':
