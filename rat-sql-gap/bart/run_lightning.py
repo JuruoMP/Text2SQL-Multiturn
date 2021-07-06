@@ -95,8 +95,8 @@ class SQLBart(pl.LightningModule):
             if self.current_epoch % self.check_interval == 0:
                 gold = [x.strip() for x in open('sparc/dev_gold.txt', 'r').readlines()]
                 with open('bart/predict/predict_debug.txt', 'w') as fw:
-                    for pred in pred_list:
-                        fw.write(f'{pred[1].strip()}\n{gold[0]}\n')
+                    for i, pred in enumerate(pred_list):
+                        fw.write(f'{i}\t{pred[1].strip()}\n{i}\t{gold[0]}\n')
                         del gold[0]
                         if gold[0] == '':
                             fw.write('\n')
