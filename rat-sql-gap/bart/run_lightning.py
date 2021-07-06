@@ -26,6 +26,7 @@ class SQLBart(pl.LightningModule):
         self.model.bart_model.resize_token_embeddings(len(self.tokenizer))
         self.loss_fct = torch.nn.CrossEntropyLoss(ignore_index=-100)
         self.learning_rate = 1e-5
+        self.check_interval = 1
 
     def forward(self, x):
         # in lightning, forward defines the prediction/inference actions
@@ -45,69 +46,58 @@ class SQLBart(pl.LightningModule):
         self.log('train_loss', masked_lm_loss, sync_dist=True)
         return masked_lm_loss
 
-    # def validation_step(self, x, batch_idx):
-    #     lm_logits = self.model(x)
-    #     masked_lm_loss = self.loss_fct(lm_logits.view(-1, self.model.bart_config.vocab_size), x['labels'].view(-1))
-    #     pred_ids = lm_logits.argmax(dim=-1)
-    #     pred_lfs = []
-    #     for i in range(pred_ids.size(0)):
-    #         pred_lf = self.tokenizer.convert_ids_to_tokens(pred_ids[i])
-    #         pred_lfs.append((x['id'][i].item(), pred_lf))
-    #     self.log('val_loss', masked_lm_loss, sync_dist=True, prog_bar=True)
-    #     return {'pred_lfs': pred_lfs, 'loss': masked_lm_loss}
-
     def validation_step(self, x, batch_idx):
         lm_logits = self.model(x)
         masked_lm_loss = self.loss_fct(lm_logits.view(-1, self.model.bart_config.vocab_size), x['labels'].view(-1))
         pred_ids = lm_logits.argmax(dim=-1)
+        pred_lfs = []
+        for i in range(pred_ids.size(0)):
+            pred_lf = self.tokenizer.convert_ids_to_tokens(pred_ids[i])
+            pred_lfs.append((x['id'][i].item(), pred_lf))
         self.log('val_loss', masked_lm_loss, sync_dist=True, prog_bar=True)
-        return {'ids': x['id'], 'pred_ids': pred_ids, 'loss': masked_lm_loss}
+        return {'pred_lfs': pred_lfs, 'loss': masked_lm_loss}
+
+    # def validation_step(self, x, batch_idx):
+    #     lm_logits = self.model(x)
+    #     masked_lm_loss = self.loss_fct(lm_logits.view(-1, self.model.bart_config.vocab_size), x['labels'].view(-1))
+    #     pred_ids = lm_logits.argmax(dim=-1)
+    #     self.log('val_loss', masked_lm_loss, sync_dist=True, prog_bar=True)
+    #     return {'ids': x['id'], 'pred_ids': pred_ids, 'loss': masked_lm_loss}
+
+    def validation_step_end(self, step_output):
+        pred_dict = {}
+        for idx, pred_lf in step_output['pred_lfs']:
+            pred_dict[idx] = pred_lf
+        with open(f'bart/predict/predict_rank_{self.global_rank}.txt', 'a') as fa:
+            for idx, pred_lf in pred_dict.items():
+                fa.write(f'{idx}\t{pred_lf}\n')
+        return pred_dict
 
     def validation_epoch_end(self, validation_step_output):
-        all_device_pred_dict = self.all_gather(validation_step_output)
         if self.global_rank == 0:
-            for device_pred_dict in all_device_pred_dict:
-                all_pred_ids_list = device_pred_dict['pred_ids'].view(-1, device_pred_dict['pred_ids'].size(-1))
-                all_pred_ids = pad_sequence(all_pred_ids_list)
-                pred_dict = {}
-                for i in range(all_pred_ids.size(0)):
-                    t1 = time.time()
-                    print('111111111111111')
-                    print(all_pred_ids[i])
-                    pred_lf = self.tokenizer.convert_ids_to_tokens(all_pred_ids[i])
-                    print('222222222222222')
-                    if self.tokenizer.eos_token in pred_lf:
-                        pred_lf = pred_lf[1:pred_lf.index(self.tokenizer.eos_token)]
-                    else:
-                        pred_lf = pred_lf[1:]
-                    print('333333333333333')
-                    pred_lf = ''.join(pred_lf).replace('Ġ', ' ')
-                    pred_dict[device_pred_dict['ids'][i].item()] = pred_lf
-                    print('444444444444444')
-                    t2 = time.time()
-                    print(f'convert time = {t2-t1:.2f}')
-
-            gold = [x.strip() for x in open('sparc/dev_gold.txt', 'r', encoding='utf-8').readlines()]
-            all_pred_list = sorted(pred_dict.items(), key=lambda x: x[0])
-
-            pred_lines, pred_gold_pairs = [], []
-            for idx, pred in all_pred_list:
-                pred_lines.append(pred + '\n')
-                pred_gold_pairs.append((pred, gold[0]))
-                del gold[0]
-                if gold[0] == '':
-                    del gold[0]
-                    pred_lines.append('\n')
-                    pred_gold_pairs.append((None, None))
+            pred_dict = {}
+            for i in range(8):
+                if os.path.exists(f'bart/predict/predict_rank_{i}.txt'):
+                    with open(f'bart/predict/predict_rank_{i}.txt', 'r') as fr:
+                        lines = fr.readlines()
+                    for line in lines:
+                        idx, pred_lf = line.split('\t', 1)
+                        pred_dict[idx] = pred_lf
+                    with open(f'bart/predict/predict_rank_{i}.txt', 'w') as fw:
+                        pass
+            pred_list = sorted(pred_dict.items(), key=lambda x: x[0])
             with open('bart/predict/predict.txt', 'w') as fw:
-                fw.writelines(pred_lines)
-            if self.current_epoch % 1 == 0:
+                for idx, pred in pred_list:
+                    fw.write(pred)
+            if self.current_epoch % self.check_interval == 0:
+                gold = [x.strip() for x in open('sparc/dev_gold.txt', 'r').readlines()]
                 with open('bart/predict/predict_debug.txt', 'w') as fw:
-                    for pred, gold in pred_gold_pairs:
-                        if pred and gold:
-                            fw.write(pred + '\n' + gold + '\n')
-                        else:
+                    for pred in pred_list:
+                        fw.write(f'{pred[1].strip()}\n{gold[0]}\n')
+                        del gold[0]
+                        if gold[0] == '':
                             fw.write('\n')
+                            del gold[0]
             exact_match_acc = evaluate_sparc('sparc/dev_gold.txt', 'bart/predict/predict.txt', 'sparc/database', 'sparc/tables.json')
             self.log('val_acc', exact_match_acc, prog_bar=True)
 
