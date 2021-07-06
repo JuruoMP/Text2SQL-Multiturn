@@ -53,6 +53,11 @@ class SQLBart(pl.LightningModule):
         pred_lfs = []
         for i in range(pred_ids.size(0)):
             pred_lf = self.tokenizer.convert_ids_to_tokens(pred_ids[i])
+            if self.tokenizer.eos_token in pred_lf:
+                pred_lf = pred_lf[1:pred_lf.index(self.tokenizer.eos_token)]
+            else:
+                pred_lf = pred_lf[1:]
+            pred_lf = ''.join(pred_lf).replace('Ġ', ' ')
             pred_lfs.append((x['id'][i].item(), pred_lf))
         self.log('val_loss', masked_lm_loss, sync_dist=True, prog_bar=True)
         return {'pred_lfs': pred_lfs, 'loss': masked_lm_loss}

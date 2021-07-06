@@ -149,8 +149,6 @@ class SparcDataset(torch.utils.data.Dataset):
                     orig_schema=self.schemas[entry['database_id']].orig)
                 if self.validate_item(item):
                     self.examples.append(item)
-            if len(self.examples) >= 500:
-                break
 
         print('Sparc dataset built.')
 
