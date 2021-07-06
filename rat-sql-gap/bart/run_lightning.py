@@ -81,7 +81,7 @@ class SQLBart(pl.LightningModule):
                         lines = fr.readlines()
                     for line in lines:
                         idx, pred_lf, db_name = line.strip().split('\t')
-                        pred_dict[idx] = (pred_lf, db_name)
+                        pred_dict[int(idx)] = (pred_lf, db_name)
                     with open(f'bart/predict/predict_rank_{i}.txt', 'w') as fw:
                         pass
             pred_list = sorted(pred_dict.items(), key=lambda x: x[0])
