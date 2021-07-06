@@ -58,17 +58,18 @@ class SQLBart(pl.LightningModule):
             else:
                 pred_lf = pred_lf[1:]
             pred_lf = ''.join(pred_lf).replace('Ġ', ' ')
-            pred_lfs.append((x['id'][i].item(), pred_lf))
+            db_name = ''.join(self.tokenizer.convert_ids_to_tokens(x['db_name'][i])).replace('Ġ', ' ')
+            pred_lfs.append((x['id'][i].item(), pred_lf, db_name))
         self.log('val_loss', masked_lm_loss, sync_dist=True, prog_bar=True)
         return {'pred_lfs': pred_lfs, 'loss': masked_lm_loss}
 
     def validation_step_end(self, step_output):
         pred_dict = {}
-        for idx, pred_lf in step_output['pred_lfs']:
-            pred_dict[idx] = pred_lf
+        for idx, pred_lf, db_name in step_output['pred_lfs']:
+            pred_dict[idx] = (pred_lf, db_name)
         with open(f'bart/predict/predict_rank_{self.global_rank}.txt', 'a') as fa:
-            for idx, pred_lf in pred_dict.items():
-                fa.write(f'{idx}\t{pred_lf}\n')
+            for idx, (pred_lf, db_name) in pred_dict.items():
+                fa.write(f'{idx}\t{pred_lf}\t{db_name}\n')
         return pred_dict
 
     def validation_epoch_end(self, validation_step_output):
@@ -79,15 +80,15 @@ class SQLBart(pl.LightningModule):
                     with open(f'bart/predict/predict_rank_{i}.txt', 'r') as fr:
                         lines = fr.readlines()
                     for line in lines:
-                        idx, pred_lf = line.split('\t', 1)
-                        pred_dict[idx] = pred_lf
+                        idx, pred_lf, db_name = line.strip().split('\t')
+                        pred_dict[idx] = (pred_lf, db_name)
                     with open(f'bart/predict/predict_rank_{i}.txt', 'w') as fw:
                         pass
             pred_list = sorted(pred_dict.items(), key=lambda x: x[0])
             with open('bart/predict/predict.txt', 'w') as fw:
                 gold = [x.strip() for x in open('sparc/dev_gold.txt', 'r').readlines()]
-                for idx, pred in pred_list:
-                    fw.write(pred)
+                for idx, (pred, db_name) in pred_list:
+                    fw.write(pred + '\n')
                     del gold[0]
                     if gold[0] == '':
                         fw.write('\n')
@@ -95,8 +96,8 @@ class SQLBart(pl.LightningModule):
             if self.current_epoch % self.check_interval == 0:
                 gold = [x.strip() for x in open('sparc/dev_gold.txt', 'r').readlines()]
                 with open('bart/predict/predict_debug.txt', 'w') as fw:
-                    for i, pred in enumerate(pred_list):
-                        fw.write(f'{i}\t{pred[1].strip()}\n{i}\t{gold[0]}\n')
+                    for i, (pred, db_name) in pred_list:
+                        fw.write(f'{i}\t{pred}\t{db_name}\n{i}\t{gold[0]}\n')
                         del gold[0]
                         if gold[0] == '':
                             fw.write('\n')
@@ -124,8 +125,8 @@ if __name__ == '__main__':
     bart_tokenizer = BartTokenizer.from_pretrained('facebook/bart-large', additional_special_tokens=['<c>'])
     train_dataset = SparcDataset('sparc/train.json', 'sparc/tables.json', 'sparc/database', tokenizer=bart_tokenizer)
     dev_dataset = SparcDataset('sparc/dev.json', 'sparc/tables.json', 'sparc/database', tokenizer=bart_tokenizer)
-    train_dataloader = DataLoader(train_dataset, batch_size=8, shuffle=True, collate_fn=train_dataset.collate_fn)
-    dev_dataloader = DataLoader(dev_dataset, batch_size=8, shuffle=False, collate_fn=dev_dataset.collate_fn)
+    train_dataloader = DataLoader(train_dataset, batch_size=4, shuffle=True, collate_fn=train_dataset.collate_fn)
+    dev_dataloader = DataLoader(dev_dataset, batch_size=4, shuffle=False, collate_fn=dev_dataset.collate_fn)
 
     sql_bart = SQLBart(bart_tokenizer)
     trainer = pl.Trainer(gpus=-1, precision=16, default_root_dir='bart/checkpoints',

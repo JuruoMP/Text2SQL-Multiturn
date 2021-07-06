@@ -27,6 +27,7 @@ class SparcItem:
     schema = attr.ib()
     orig = attr.ib()
     orig_schema = attr.ib()
+    db_name = attr.ib()
 
 
 @attr.s
@@ -146,7 +147,9 @@ class SparcDataset(torch.utils.data.Dataset):
                     code=interaction['query'],
                     schema=self.schemas[entry['database_id']],
                     orig=(entry, i),
-                    orig_schema=self.schemas[entry['database_id']].orig)
+                    orig_schema=self.schemas[entry['database_id']].orig,
+                    db_name=entry['database_id']
+                )
                 if self.validate_item(item):
                     self.examples.append(item)
 
@@ -165,6 +168,7 @@ class SparcDataset(torch.utils.data.Dataset):
             'decoder_input_ids': decoder_dict['input_ids'],
             'decoder_attention_mask': decoder_dict['attention_mask'],
             'labels': copy.deepcopy(decoder_dict['input_ids']),
+            'db_name': self.tokenizer(item.db_name)['input_ids']
         }
 
     def tokenize_item(self, item):
@@ -195,12 +199,14 @@ class SparcDataset(torch.utils.data.Dataset):
     def collate_fn(self, x_list):
         max_input_len = max(len(x['input_ids']) for x in x_list)
         max_output_len = max(len(x['decoder_input_ids']) for x in x_list)
+        max_dbname_len = max(len(x['db_name']) for x in x_list)
         for x in x_list:
             x['input_ids'] += [0 for _ in range(max_input_len - len(x['input_ids']))]
             x['attention_mask'] += [0 for _ in range(max_input_len - len(x['attention_mask']))]
             x['decoder_input_ids'] += [0 for _ in range(max_output_len - len(x['decoder_input_ids']))]
             x['decoder_attention_mask'] += [0 for _ in range(max_output_len - len(x['decoder_attention_mask']))]
             x['labels'] += [-100 for _ in range(max_output_len - len(x['labels']))]
+            x['db_name'] += [0 for _ in range(max_dbname_len - len(x['db_name']))]
         return default_collate([{k: torch.tensor(v).long() for k, v in x.items()} for x in x_list])
 
     class Metrics:
