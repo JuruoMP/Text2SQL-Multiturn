@@ -62,13 +62,6 @@ class SQLBart(pl.LightningModule):
         self.log('val_loss', masked_lm_loss, sync_dist=True, prog_bar=True)
         return {'pred_lfs': pred_lfs, 'loss': masked_lm_loss}
 
-    # def validation_step(self, x, batch_idx):
-    #     lm_logits = self.model(x)
-    #     masked_lm_loss = self.loss_fct(lm_logits.view(-1, self.model.bart_config.vocab_size), x['labels'].view(-1))
-    #     pred_ids = lm_logits.argmax(dim=-1)
-    #     self.log('val_loss', masked_lm_loss, sync_dist=True, prog_bar=True)
-    #     return {'ids': x['id'], 'pred_ids': pred_ids, 'loss': masked_lm_loss}
-
     def validation_step_end(self, step_output):
         pred_dict = {}
         for idx, pred_lf in step_output['pred_lfs']:
@@ -92,8 +85,13 @@ class SQLBart(pl.LightningModule):
                         pass
             pred_list = sorted(pred_dict.items(), key=lambda x: x[0])
             with open('bart/predict/predict.txt', 'w') as fw:
+                gold = [x.strip() for x in open('sparc/dev_gold.txt', 'r').readlines()]
                 for idx, pred in pred_list:
                     fw.write(pred)
+                    del gold[0]
+                    if gold[0] == '':
+                        fw.write('\n')
+                        del gold[0]
             if self.current_epoch % self.check_interval == 0:
                 gold = [x.strip() for x in open('sparc/dev_gold.txt', 'r').readlines()]
                 with open('bart/predict/predict_debug.txt', 'w') as fw:
@@ -126,12 +124,12 @@ if __name__ == '__main__':
     bart_tokenizer = BartTokenizer.from_pretrained('facebook/bart-large', additional_special_tokens=['<c>', '</c>', '<t>'])
     train_dataset = SparcDataset('sparc/train.json', 'sparc/tables.json', 'sparc/database', tokenizer=bart_tokenizer)
     dev_dataset = SparcDataset('sparc/dev.json', 'sparc/tables.json', 'sparc/database', tokenizer=bart_tokenizer)
-    train_dataloader = DataLoader(train_dataset, batch_size=4, shuffle=True, collate_fn=train_dataset.collate_fn)
-    dev_dataloader = DataLoader(dev_dataset, batch_size=4, shuffle=False, collate_fn=dev_dataset.collate_fn)
+    train_dataloader = DataLoader(train_dataset, batch_size=8, shuffle=True, collate_fn=train_dataset.collate_fn)
+    dev_dataloader = DataLoader(dev_dataset, batch_size=8, shuffle=False, collate_fn=dev_dataset.collate_fn)
 
     sql_bart = SQLBart(bart_tokenizer)
     trainer = pl.Trainer(gpus=-1, precision=16, default_root_dir='bart/checkpoints',
-                         terminate_on_nan=True, accumulate_grad_batches=2,
+                         terminate_on_nan=True, accumulate_grad_batches=1,
                          gradient_clip_val=5, gradient_clip_algorithm='value',
                          callbacks=[EarlyStopping(monitor='val_loss', patience=10, mode='min')])
     trainer.fit(sql_bart, train_dataloader, dev_dataloader)
