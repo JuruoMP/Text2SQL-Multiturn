@@ -8,9 +8,10 @@ from tqdm import tqdm
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.dataloader import default_collate
-from transformers import BartConfig, BartTokenizer
 import networkx as nx
 from seq2struct.datasets.spider_lib import evaluation
+
+from tokenization_bart import BartTokenizer
 
 
 SQL_RESERVE_TOKENS = ['select', 'from', 'where', 'group by', 'having', 'order by', 'desc', 'asc',

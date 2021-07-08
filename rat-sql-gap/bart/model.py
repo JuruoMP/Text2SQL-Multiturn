@@ -4,28 +4,47 @@ import torch.nn as nn
 import pytorch_lightning as pl
 
 from configuration_bart import BartConfig
-from modeling_bart import BartModel
+from modeling_bart import BartPretrainedModel, BartModel
 from evaluation import evaluate as evaluate_sparc
 
 
-class SQLBartModel(nn.Module):
+class SQLBartModel(BartPretrainedModel):
     def __init__(self, name_or_path):
-        super().__init__()
-        self.bart_config = BartConfig.from_pretrained(name_or_path, cache_dir='bart/cache')
-        self.bart_model = BartModel.from_pretrained(name_or_path, cache_dir='bart/cache')
-        self.register_buffer("final_logits_bias", torch.zeros((1, self.bart_model.shared.num_embeddings)))
-        self.lm_head = nn.Linear(self.bart_config.d_model, self.bart_model.shared.num_embeddings, bias=False)
+        self.config = BartConfig.from_pretrained(name_or_path)
+        super().__init__(self.config)
+        self.model = BartModel.from_pretrained(name_or_path, cache_dir='bart/cache')
+        self.register_buffer("final_logits_bias", torch.zeros((1, self.model.shared.num_embeddings)))
+        self.lm_head = nn.Linear(self.config.d_model, self.model.shared.num_embeddings, bias=False)
 
     def forward(self, x):
-        bart_outputs = self.bart_model(
+        bart_outputs = self.model(
             input_ids=x['input_ids'],
             attention_mask=x['attention_mask'],
             decoder_input_ids=x['decoder_input_ids'],
             decoder_attention_mask=x['decoder_attention_mask']
         )
         lm_logits = self.lm_head(bart_outputs[0]) + self.final_logits_bias
-
         return lm_logits
+
+    def resize_token_embeddings(self, new_num_tokens: int) -> nn.Embedding:
+        new_embeddings = super().resize_token_embeddings(new_num_tokens)
+        self._resize_final_logits_bias(new_num_tokens)
+        return new_embeddings
+
+    def _resize_final_logits_bias(self, new_num_tokens: int) -> None:
+        old_num_tokens = self.final_logits_bias.shape[-1]
+        if new_num_tokens <= old_num_tokens:
+            new_bias = self.final_logits_bias[:, :new_num_tokens]
+        else:
+            extra_bias = torch.zeros((1, new_num_tokens - old_num_tokens), device=self.final_logits_bias.device)
+            new_bias = torch.cat([self.final_logits_bias, extra_bias], dim=1)
+        self.register_buffer("final_logits_bias", new_bias)
+
+    def get_output_embeddings(self):
+        return self.lm_head
+
+    def set_output_embeddings(self, new_embeddings):
+        self.lm_head = new_embeddings
 
 
 class SQLBart(pl.LightningModule):
@@ -33,7 +52,7 @@ class SQLBart(pl.LightningModule):
         super().__init__()
         self.tokenizer = tokenizer
         self.model = SQLBartModel(tokenizer.name_or_path)
-        self.model.bart_model.resize_token_embeddings(len(self.tokenizer))
+        self.model.resize_token_embeddings(len(self.tokenizer))
         self.loss_fct = torch.nn.CrossEntropyLoss(ignore_index=-100)
         self.learning_rate = 1e-5
         self.check_interval = 1
@@ -42,18 +61,18 @@ class SQLBart(pl.LightningModule):
         lm_logits = self.model(x)
         pred_ids = lm_logits.argmax(dim=-1)
         pred_str = [self.tokenizer.convert_ids_to_tokens(xx) for xx in pred_ids]
-        masked_lm_loss = self.loss_fct(lm_logits.view(-1, self.model.bart_config.vocab_size), x['labels'].view(-1))
+        masked_lm_loss = self.loss_fct(lm_logits.view(-1, len(self.tokenizer)), x['labels'].view(-1))
         return {'lm_logits': lm_logits, 'sql': pred_str, 'loss': masked_lm_loss}
 
     def training_step(self, x, batch_idx):
         lm_logits = self.model(x)
-        masked_lm_loss = self.loss_fct(lm_logits.view(-1, self.model.bart_config.vocab_size), x['labels'].view(-1))
+        masked_lm_loss = self.loss_fct(lm_logits.view(-1, len(self.tokenizer)), x['labels'].view(-1))
         self.log('train_loss', masked_lm_loss, sync_dist=True)
         return masked_lm_loss
 
     def validation_step(self, x, batch_idx):
         lm_logits = self.model(x)
-        masked_lm_loss = self.loss_fct(lm_logits.view(-1, self.model.bart_config.vocab_size), x['labels'].view(-1))
+        masked_lm_loss = self.loss_fct(lm_logits.view(-1, len(self.tokenizer)), x['labels'].view(-1))
         pred_ids = lm_logits.argmax(dim=-1)
         pred_lfs = []
         for i in range(pred_ids.size(0)):

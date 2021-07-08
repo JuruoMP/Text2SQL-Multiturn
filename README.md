@@ -107,7 +107,7 @@ conda create -n text2sql python=3.7
 conda activate text2sql
 pip install torch==1.7.1+cu110 torchvision==0.8.2+cu110 torchaudio==0.7.2 -f https://download.pytorch.org/whl/torch_stable.html
 pip install -r requirements
-pip install -U transformers
+pip install -U transformers==4.8.2
 
 cd rat-sql-gap
 mkdir third_party
