@@ -179,7 +179,8 @@ class SparcDataset(torch.utils.data.Dataset):
             sql = sql.replace(' ' + token + ' ', ' ' + token.upper() + ' ')
         for token in SQL_RESERVE_AGGRS:
             sql = sql.replace(token + '(', token.upper() + '(')
-        sql = sql.strip()
+        sql = sql.strip().replace('  ', ' ')
+        sql = sql.replace(' ', '<space>')
         columns = []
         for c in item.schema.columns:
             if c and c.table:
@@ -250,7 +251,7 @@ class SparcDataset(torch.utils.data.Dataset):
 
 
 if __name__ == '__main__':
-    bart_tokenizer = BartTokenizer.from_pretrained('facebook/bart-large', additional_special_tokens=['<c>', '</c>', '<t>'])
+    bart_tokenizer = BartTokenizer.from_pretrained('facebook/bart-large', additional_special_tokens=['<c>', '<space>'])
     train_data = SparcDataset('sparc/train.json', 'sparc/tables.json', 'sparc/database', bart_tokenizer)
     dataloader = torch.utils.data.DataLoader(train_data, batch_size=7, collate_fn=train_data.collate_fn)
     for batch in dataloader:

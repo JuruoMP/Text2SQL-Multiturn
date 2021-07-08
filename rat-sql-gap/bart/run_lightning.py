@@ -13,7 +13,7 @@ from tokenization_bart import BartTokenizer
 
 if __name__ == '__main__':
     config_name = 'facebook/bart-large'
-    bart_tokenizer = BartTokenizer.from_pretrained(config_name, additional_special_tokens=['<c>'])
+    bart_tokenizer = BartTokenizer.from_pretrained(config_name, additional_special_tokens=['<c>', '<space>'])
     train_dataset = SparcDataset('sparc/train.json', 'sparc/tables.json', 'sparc/database', tokenizer=bart_tokenizer)
     dev_dataset = SparcDataset('sparc/dev.json', 'sparc/tables.json', 'sparc/database', tokenizer=bart_tokenizer)
     train_dataloader = DataLoader(train_dataset, batch_size=4, shuffle=True, collate_fn=train_dataset.collate_fn)
