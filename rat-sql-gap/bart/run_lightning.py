@@ -6,13 +6,14 @@ from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
-from .model import SQLBart
-from .dataset import SparcDataset
-from .tokenization_bart import BartTokenizer
+from model import SQLBart
+from dataset import SparcDataset
+from tokenization_bart import BartTokenizer
 
 
 if __name__ == '__main__':
-    bart_tokenizer = BartTokenizer.from_pretrained('facebook/bart-large', additional_special_tokens=['<c>'])
+    config_name = 'facebook/bart-large'
+    bart_tokenizer = BartTokenizer.from_pretrained(config_name, additional_special_tokens=['<c>'])
     train_dataset = SparcDataset('sparc/train.json', 'sparc/tables.json', 'sparc/database', tokenizer=bart_tokenizer)
     dev_dataset = SparcDataset('sparc/dev.json', 'sparc/tables.json', 'sparc/database', tokenizer=bart_tokenizer)
     train_dataloader = DataLoader(train_dataset, batch_size=4, shuffle=True, collate_fn=train_dataset.collate_fn)

@@ -3,17 +3,16 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 
-from .configuration_bart import BartConfig
-from .modeling_bart import BartModel
-from .evaluation import evaluate as evaluate_sparc
+from configuration_bart import BartConfig
+from modeling_bart import BartModel
+from evaluation import evaluate as evaluate_sparc
 
 
 class SQLBartModel(nn.Module):
-    def __init__(self):
+    def __init__(self, name_or_path):
         super().__init__()
-        config_name = 'facebook/bart-large'
-        self.bart_config = BartConfig.from_pretrained(config_name, cache_dir='bart/cache')
-        self.bart_model = BartModel.from_pretrained(config_name, cache_dir='bart/cache')
+        self.bart_config = BartConfig.from_pretrained(name_or_path, cache_dir='bart/cache')
+        self.bart_model = BartModel.from_pretrained(name_or_path, cache_dir='bart/cache')
         self.register_buffer("final_logits_bias", torch.zeros((1, self.bart_model.shared.num_embeddings)))
         self.lm_head = nn.Linear(self.bart_config.d_model, self.bart_model.shared.num_embeddings, bias=False)
 
@@ -33,7 +32,7 @@ class SQLBart(pl.LightningModule):
     def __init__(self, tokenizer):
         super().__init__()
         self.tokenizer = tokenizer
-        self.model = SQLBartModel()
+        self.model = SQLBartModel(tokenizer.name_or_path)
         self.model.bart_model.resize_token_embeddings(len(self.tokenizer))
         self.loss_fct = torch.nn.CrossEntropyLoss(ignore_index=-100)
         self.learning_rate = 1e-5

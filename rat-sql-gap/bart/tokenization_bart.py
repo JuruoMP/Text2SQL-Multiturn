@@ -14,7 +14,7 @@
 # limitations under the License.
 
 from transformers.utils import logging
-from .tokenization_roberta import RobertaTokenizer
+from transformers import RobertaTokenizer
 
 
 logger = logging.get_logger(__name__)

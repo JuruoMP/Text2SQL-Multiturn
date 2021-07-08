@@ -153,6 +153,9 @@ class SparcDataset(torch.utils.data.Dataset):
                 if self.validate_item(item):
                     self.examples.append(item)
 
+            if len(self.examples) >= 500:
+                break
+
         print('Sparc dataset built.')
 
     def __len__(self):

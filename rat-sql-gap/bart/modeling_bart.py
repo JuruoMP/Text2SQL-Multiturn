@@ -43,7 +43,8 @@ from transformers.modeling_outputs import (
 )
 from transformers.modeling_utils import PreTrainedModel
 from transformers.utils import logging
-from .configuration_bart import BartConfig
+
+from configuration_bart import BartConfig
 
 
 logger = logging.get_logger(__name__)
