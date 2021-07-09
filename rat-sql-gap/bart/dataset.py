@@ -126,11 +126,12 @@ def load_tables(path):
 
 
 class SparcDataset(torch.utils.data.Dataset):
-    def __init__(self, path, tables_paths, db_path, tokenizer, limit=None):
+    def __init__(self, path, tables_paths, db_path, tokenizer, mode='train', limit=None):
         self.path = path
         self.db_path = db_path
         self.examples = []
         self.use_column_type = False
+        self.mode = mode
         self.tokenizer = tokenizer
         self.max_seq_len = self.tokenizer.model_max_length
 
@@ -154,6 +155,8 @@ class SparcDataset(torch.utils.data.Dataset):
                 if self.validate_item(item):
                     self.examples.append(item)
 
+            # if len(self.examples) >= 5000: break
+
         print('Sparc dataset built.')
 
     def __len__(self):
@@ -174,14 +177,17 @@ class SparcDataset(torch.utils.data.Dataset):
 
     def tokenize_item(self, item):
         nl = ' '.join([t for s in item.text for t in s])
-        sql = item.code.replace("'", '"')
-        sql = ' ' + re.sub(r'\b(?<!")(\w+)(?!")\b', lambda match: match.group(1).lower(), sql) + ' '
-        for token in SQL_RESERVE_TOKENS:
-            sql = sql.replace(' ' + token + ' ', ' ' + token.upper() + ' ')
-        for token in SQL_RESERVE_AGGRS:
-            sql = sql.replace(token + '(', token.upper() + '(')
-        sql = sql.strip().replace('  ', ' ')
-        sql = sql.replace(' ', '<space>')
+        if self.mode != 'test':
+            sql = item.code.replace("'", '"')
+            sql = ' ' + re.sub(r'\b(?<!")(\w+)(?!")\b', lambda match: match.group(1).lower(), sql) + ' '
+            for token in SQL_RESERVE_TOKENS:
+                sql = sql.replace(' ' + token + ' ', ' ' + token.upper() + ' ')
+            for token in SQL_RESERVE_AGGRS:
+                sql = sql.replace(token + '(', token.upper() + '(')
+            sql = sql.strip().replace('  ', ' ')
+            sql = sql.replace(' ', '<space>')
+        else:
+            sql = ''
         columns = []
         for c in item.schema.columns:
             if c and c.table:
@@ -192,6 +198,8 @@ class SparcDataset(torch.utils.data.Dataset):
             concat_input += ' <c>' + c[0].lower() + '</s>' + c[1].lower()
         encoder_dict = self.tokenizer(concat_input)
         decoder_dict = self.tokenizer(sql)
+        # decoder_dict['input_ids'] = [self.tokenizer.eos_token_id] + decoder_dict['input_ids']
+        # decoder_dict['attention_mask'] = [1] + decoder_dict['attention_mask']
         return encoder_dict, decoder_dict
 
     def validate_item(self, item):
