@@ -9,8 +9,9 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.dataloader import default_collate
 import networkx as nx
-from seq2struct.datasets.spider_lib import evaluation
+import pytorch_lightning as pl
 
+from seq2struct.datasets.spider_lib import evaluation
 from tokenization_bart import BartTokenizer
 
 
@@ -154,10 +155,7 @@ class SparcDataset(torch.utils.data.Dataset):
                 )
                 if self.validate_item(item):
                     self.examples.append(item)
-
             # if len(self.examples) >= 5000: break
-
-        print('Sparc dataset built.')
 
     def __len__(self):
         return len(self.examples)
@@ -206,7 +204,8 @@ class SparcDataset(torch.utils.data.Dataset):
         encoder_dict, decoder_dict = self.tokenize_item(item)
         return len(encoder_dict['input_ids']) < self.max_seq_len and len(decoder_dict['input_ids']) < self.max_seq_len
 
-    def collate_fn(self, x_list):
+    @staticmethod
+    def collate_fn(x_list):
         max_input_len = max(len(x['input_ids']) for x in x_list)
         max_output_len = max(len(x['decoder_input_ids']) for x in x_list)
         max_dbname_len = max(len(x['db_name']) for x in x_list)
@@ -259,9 +258,62 @@ class SparcDataset(torch.utils.data.Dataset):
             }
 
 
+class SparcDataModule(pl.LightningDataModule):
+    def __init__(self, data_dir="sparc/", batch_size=4, tokenizer=None):
+        super().__init__()
+        self.data_dir = data_dir
+        self.batch_size = batch_size
+        self.tokenizer = tokenizer
+        assert tokenizer is not None
+        self.dataset = {}
+
+    def setup(self, stage=None):
+        if stage == 'fit' or stage is None:
+            for split in ('train', 'dev'):
+                dataset = SparcDataset(os.path.join(self.data_dir, f'{split}.json'),
+                                       os.path.join(self.data_dir, 'tables.json'),
+                                       os.path.join(self.data_dir, 'database'),
+                                       tokenizer=self.tokenizer)
+                self.dataset[split] = dataset
+        if stage == 'test' or stage is None:
+            test_dataset = SparcDataset(os.path.join(self.data_dir, 'dev.json'),
+                                        os.path.join(self.data_dir, 'tables.json'),
+                                        os.path.join(self.data_dir, 'database'),
+                                        tokenizer=self.tokenizer, mode='test')
+            self.dataset['test'] = test_dataset
+
+    def train_dataloader(self):
+        if 'train' not in self.dataset:
+            dataset = SparcDataset(os.path.join(self.data_dir, 'train.json'),
+                                   os.path.join(self.data_dir, 'tables.json'),
+                                   os.path.join(self.data_dir, 'database'),
+                                   tokenizer=self.tokenizer)
+            self.dataset['train'] = dataset
+        return DataLoader(self.dataset['train'], batch_size=self.batch_size, collate_fn=SparcDataset.collate_fn)
+
+    def val_dataloader(self):
+        if 'dev' not in self.dataset:
+            dataset = SparcDataset(os.path.join(self.data_dir, 'dev.json'),
+                                   os.path.join(self.data_dir, 'tables.json'),
+                                   os.path.join(self.data_dir, 'database'),
+                                   tokenizer=self.tokenizer)
+            self.dataset['dev'] = dataset
+        return DataLoader(self.dataset['dev'], batch_size=self.batch_size, collate_fn=SparcDataset.collate_fn)
+
+    def test_dataloader(self):
+        if 'test' not in self.dataset:
+            dataset = SparcDataset(os.path.join(self.data_dir, 'dev.json'),
+                                   os.path.join(self.data_dir, 'tables.json'),
+                                   os.path.join(self.data_dir, 'database'),
+                                   tokenizer=self.tokenizer)
+            self.dataset['test'] = dataset
+        return DataLoader(self.dataset['test'], batch_size=self.batch_size, collate_fn=SparcDataset.collate_fn)
+
+
 if __name__ == '__main__':
     bart_tokenizer = BartTokenizer.from_pretrained('facebook/bart-large', additional_special_tokens=['<c>', '<space>'])
-    train_data = SparcDataset('sparc/train.json', 'sparc/tables.json', 'sparc/database', bart_tokenizer)
-    dataloader = torch.utils.data.DataLoader(train_data, batch_size=7, collate_fn=train_data.collate_fn)
-    for batch in dataloader:
+    # train_data = SparcDataset('sparc/train.json', 'sparc/tables.json', 'sparc/database', bart_tokenizer)
+    # dataloader = torch.utils.data.DataLoader(train_data, batch_size=7, collate_fn=train_data.collate_fn)
+    sparc_data = SparcDataModule('sparc/', batch_size=7)
+    for batch in sparc_data.train_dataloader():
         a = 1

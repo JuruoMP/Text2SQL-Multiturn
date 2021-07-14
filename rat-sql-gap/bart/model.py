@@ -139,7 +139,7 @@ class SQLBart(pl.LightningModule):
         ).loss
 
         pred_lfs = []
-        pred_ids = self.model.generate(x['input_ids'], num_beams=4, max_length=32, early_stopping=True, no_repeat_ngram_size=0)[:, 1:]
+        pred_ids = self.model.generate(x['input_ids'], num_beams=4, early_stopping=True, no_repeat_ngram_size=0)[:, 1:]
         for i in range(x['id'].size(0)):
             pred_lf = self.tokenizer.convert_ids_to_tokens(pred_ids[i])
             if self.tokenizer.eos_token in pred_lf:
@@ -198,7 +198,13 @@ class SQLBart(pl.LightningModule):
         return self.validation_step(x, batch_idx)
 
     def test_step_end(self, step_output):
-        return self.validation_step_end(step_output)
+        pred_dict = {}
+        for idx, pred_lf, db_name in step_output['pred_lfs']:
+            pred_dict[idx] = (pred_lf, db_name)
+        with open(f'bart/predict/test_rank_{self.global_rank}.txt', 'a') as fa:
+            for idx, (pred_lf, db_name) in pred_dict.items():
+                fa.write(f'{idx}\t{pred_lf}\t{db_name}\n')
+        return pred_dict
 
     def test_epoch_end(self, test_step_output):
         if self.global_rank == 0:

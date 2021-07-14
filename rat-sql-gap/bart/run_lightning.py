@@ -7,25 +7,22 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 from model import SQLBart
-from dataset import SparcDataset
+from dataset import SparcDataModule
 from tokenization_bart import BartTokenizer
 
 
 if __name__ == '__main__':
     config_name = 'facebook/bart-base'
     bart_tokenizer = BartTokenizer.from_pretrained(config_name, additional_special_tokens=['<c>', '<space>'])
-    train_dataset = SparcDataset('sparc/train.json', 'sparc/tables.json', 'sparc/database', tokenizer=bart_tokenizer)
-    dev_dataset = SparcDataset('sparc/dev.json', 'sparc/tables.json', 'sparc/database', tokenizer=bart_tokenizer)
-    train_dataloader = DataLoader(train_dataset, batch_size=8, shuffle=True, collate_fn=train_dataset.collate_fn)
-    dev_dataloader = DataLoader(dev_dataset, batch_size=8, shuffle=False, collate_fn=dev_dataset.collate_fn)
+    sparc_data = SparcDataModule('sparc/', batch_size=8, tokenizer=bart_tokenizer)
 
     sql_bart = SQLBart(bart_tokenizer)
     trainer = pl.Trainer(gpus=-1, precision=16, default_root_dir='bart/checkpoints',
                          terminate_on_nan=True, accumulate_grad_batches=1,
                          gradient_clip_val=5, gradient_clip_algorithm='value',
-                         callbacks=[EarlyStopping(monitor='val_loss', patience=3, mode='min')], max_epochs=3)
-    trainer.fit(sql_bart, train_dataloader, dev_dataloader)
+                         callbacks=[EarlyStopping(monitor='val_loss', patience=10, mode='min')],
+                         resume_from_checkpoint='bart/checkpoints/lightning_logs/version_0/checkpoints/epoch=30-step=8648.ckpt'
+                         )
+    trainer.fit(model=sql_bart, datamodule=sparc_data)
 
-    test_dataset = SparcDataset('sparc/dev.json', 'sparc/tables.json', 'sparc/database', tokenizer=bart_tokenizer, mode='test')
-    test_dataloader = DataLoader(dev_dataset, batch_size=4, shuffle=False, collate_fn=test_dataset.collate_fn)
-    trainer.test(test_dataloaders=test_dataloader, ckpt_path='best')
+    trainer.test(model=sql_bart, datamodule=sparc_data)
