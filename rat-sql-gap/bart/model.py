@@ -59,9 +59,7 @@ class SQLBart(pl.LightningModule):
         for i in range(x['id'].size(0)):
             pred_lf = self.tokenizer.convert_ids_to_tokens(pred_ids[i])
             if self.tokenizer.eos_token in pred_lf:
-                pred_lf = pred_lf[1:pred_lf.index(self.tokenizer.eos_token)]
-            else:
-                pred_lf = pred_lf[1:]
+                pred_lf = pred_lf[:pred_lf.index(self.tokenizer.eos_token)]
             pred_lf = ''.join(pred_lf).replace('Ġ', ' ').replace('<space>', ' ')
             db_name = ''.join(self.tokenizer.convert_ids_to_tokens(x['db_name'][i])).replace('Ġ', ' ')
             pred_lfs.append((x['id'][i].item(), pred_lf, db_name))
