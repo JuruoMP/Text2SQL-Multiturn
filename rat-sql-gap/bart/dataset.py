@@ -155,6 +155,18 @@ class SparcDataset(torch.utils.data.Dataset):
                 )
                 if self.validate_item(item):
                     self.examples.append(item)
+            if self.mode == 'train':
+                item = SparcItem(
+                    id=len(self.examples),
+                    text=[entry['final']['utterance'].split()],
+                    code=entry['final']['query'],
+                    schema=self.schemas[entry['database_id']],
+                    orig=(entry, -1),
+                    orig_schema=self.schemas[entry['database_id']].orig,
+                    db_name=entry['database_id']
+                )
+                if self.validate_item(item):
+                    self.examples.append(item)
             # if len(self.examples) >= 5000: break
 
     def __len__(self):
@@ -271,7 +283,7 @@ class SparcDataModule(pl.LightningDataModule):
                 dataset = SparcDataset(os.path.join(self.data_dir, f'{split}.json'),
                                        os.path.join(self.data_dir, 'tables.json'),
                                        os.path.join(self.data_dir, 'database'),
-                                       tokenizer=self.tokenizer)
+                                       tokenizer=self.tokenizer, mode=split)
                 self.dataset[split] = dataset
         if stage == 'test' or stage is None:
             test_dataset = SparcDataset(os.path.join(self.data_dir, 'dev.json'),
@@ -285,7 +297,7 @@ class SparcDataModule(pl.LightningDataModule):
             dataset = SparcDataset(os.path.join(self.data_dir, 'train.json'),
                                    os.path.join(self.data_dir, 'tables.json'),
                                    os.path.join(self.data_dir, 'database'),
-                                   tokenizer=self.tokenizer)
+                                   tokenizer=self.tokenizer, mode='train')
             self.dataset['train'] = dataset
         return DataLoader(self.dataset['train'], batch_size=self.batch_size, collate_fn=SparcDataset.collate_fn)
 
@@ -294,7 +306,7 @@ class SparcDataModule(pl.LightningDataModule):
             dataset = SparcDataset(os.path.join(self.data_dir, 'dev.json'),
                                    os.path.join(self.data_dir, 'tables.json'),
                                    os.path.join(self.data_dir, 'database'),
-                                   tokenizer=self.tokenizer)
+                                   tokenizer=self.tokenizer, mode='dev')
             self.dataset['dev'] = dataset
         return DataLoader(self.dataset['dev'], batch_size=self.batch_size, collate_fn=SparcDataset.collate_fn)
 
@@ -303,7 +315,7 @@ class SparcDataModule(pl.LightningDataModule):
             dataset = SparcDataset(os.path.join(self.data_dir, 'dev.json'),
                                    os.path.join(self.data_dir, 'tables.json'),
                                    os.path.join(self.data_dir, 'database'),
-                                   tokenizer=self.tokenizer)
+                                   tokenizer=self.tokenizer, mode='test')
             self.dataset['test'] = dataset
         return DataLoader(self.dataset['test'], batch_size=self.batch_size, collate_fn=SparcDataset.collate_fn)
 
