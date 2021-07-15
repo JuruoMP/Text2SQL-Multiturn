@@ -21,7 +21,6 @@ if __name__ == '__main__':
                          terminate_on_nan=True, accumulate_grad_batches=1,
                          gradient_clip_val=5, gradient_clip_algorithm='value',
                          callbacks=[EarlyStopping(monitor='val_loss', patience=10, mode='min')],
-                         resume_from_checkpoint='bart/checkpoints/lightning_logs/version_0/checkpoints/epoch=30-step=8648.ckpt'
                          )
     trainer.fit(model=sql_bart, datamodule=sparc_data)
 

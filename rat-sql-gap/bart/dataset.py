@@ -196,8 +196,6 @@ class SparcDataset(torch.utils.data.Dataset):
             concat_input += ' <c>' + c[0].lower() + '</s>' + c[1].lower()
         encoder_dict = self.tokenizer(concat_input)
         decoder_dict = self.tokenizer(sql)
-        # decoder_dict['input_ids'] = [self.tokenizer.eos_token_id] + decoder_dict['input_ids']
-        # decoder_dict['attention_mask'] = [1] + decoder_dict['attention_mask']
         return encoder_dict, decoder_dict
 
     def validate_item(self, item):
